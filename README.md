@@ -75,7 +75,7 @@ fastapi-app/
 ├── rag/                    # RAG 核心（独立 git 仓库，CLI 仍可用）
 │   ├── main.py             # ingest/ask/run/eval + CLI
 │   ├── chunker/embed_store/retrieve/generate/ingest/citations/config
-│   ├── tests/              # 14 个单测（清洗/切块/引用/混合检索）
+│   ├── tests/              # 30 个单测（清洗/切块/引用/检索/解析缓存/链路分支）
 │   └── data/               # uploads/（前端上传）、_parse_cache/（解析缓存）、qdrant_data/（索引）
 ├── web/                    # 前端（Vite + React + TS + Ant Design X）
 │   ├── src/lib/            # api.ts 客户端 + chat-provider.ts（DefaultChatProvider 透传）
@@ -94,7 +94,8 @@ fastapi-app/
 | [docs/api.md](docs/api.md) | 联调/二次开发 | 5 个端点完整参考：请求/响应/错误/curl 实测 |
 | [web/README.md](web/README.md) | 前端开发 | 前端技术栈、目录语义、chat-provider 原理、构建注意 |
 | [rag/README.md](rag/README.md) | RAG 原理 | 核心链路、踩坑实录 9 条、优化记录 P0/P1 |
-| [rag/tests/test_rag.py](rag/tests/test_rag.py) | 测试 | 14 个纯函数单测，可离线跑 |
+| [rag/tests/](rag/tests/) | 测试 | 30 个纯函数单测（含解析缓存/链路分支），可离线跑 |
+| [tests/test_api.py](tests/test_api.py) | 测试 | 14 个 FastAPI 接口测试（TestClient + 服务层打桩） |
 
 ## 🧠 面试亮点（一句话版）
 
@@ -106,15 +107,18 @@ fastapi-app/
 
 ## ✅ 测试与验证现状
 
-- **rag 单测**：`rag/.venv/bin/python -m pytest rag/tests -q` → 14 个用例全绿
+- **rag 单测**：`rag/.venv/bin/python3.12 -m pytest rag/tests -q` → **30 个用例全绿**（清洗/切块/引用/混合检索纯函数 + 解析降级链与缓存 + ask 错误分支/evaluate 命中率/Prompt 组装）
+- **接口测试**：`rag/.venv/bin/python3.12 -m pytest tests -q` → **14 个用例全绿**（FastAPI TestClient，打桩 rag 服务层：health/docs 列表与删除/ingest 白名单与防穿越/ask 参数与错误透传，零外部依赖）
 - **端到端实测**：health ✓ / 上传入库 ✓ / 文档列表与删除 ✓ / ask（"钱大妈日清模式"、"ResNet 核心创新"）回答 + 引用校验 ✓ / eval 7 用例 100% 命中
 - **前端**：`tsc -b` 类型检查通过；`vite build` 可出产物（highlight.js 版本处理见 web/README.md）
 
 ## 🛠️ 常用命令
 
 ```bash
-# 后端单测
+# rag 核心单测（纯函数，离线可跑）
 cd fastapi-app && rag/.venv/bin/python3.12 -m pytest rag/tests -q
+# 接口层测试（打桩服务层，不连 Qdrant/LLM）
+rag/.venv/bin/python3.12 -m pytest tests -q
 
 # rag CLI（不经 API 直接跑核心）
 cd fastapi-app/rag && .venv/bin/python3.12 main.py ask "钱大妈的日清模式是什么？"

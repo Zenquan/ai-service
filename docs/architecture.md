@@ -92,7 +92,7 @@ rag/main.py.ask(query)
 
 **做法**：`app/services/rag.py` 在导入时 `sys.path.insert(0, rag 目录)`，然后 `import main as rag_main`、`from embed_store import delete_doc, list_docs`。
 
-**为什么**：rag 是独立 git 仓库（7 个提交、14 个单测、CLI 全保留）。改成包（加 `__init__.py`、相对导入）会破坏它的独立可运行性。sys.path 注入让它「既是独立项目，又能当库用」。
+**为什么**：rag 是独立 git 仓库（后来并入 fastapi-app 统一管理、30 个单测、CLI 全保留）。改成包（加 `__init__.py`、相对导入）会破坏它的独立可运行性。sys.path 注入让它「既能独立 CLI 跑，又能当库用」。
 
 **坑与规避**：模块名冲突——rag 入口叫 `main`，FastAPI 应用叫 `app.main`，两个 `main` 不会撞（Python 按完整模块名区分）。CLI 的 `python main.py` 走 `__main__`，与 `import main` 不冲突。
 
