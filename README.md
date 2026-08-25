@@ -107,17 +107,20 @@ fastapi-app/
 
 ## ✅ 测试与验证现状
 
-- **rag 单测**：`rag/.venv/bin/python3.12 -m pytest rag/tests -q` → **30 个用例全绿**（清洗/切块/引用/混合检索纯函数 + 解析降级链与缓存 + ask 错误分支/evaluate 命中率/Prompt 组装）
-- **接口测试**：`rag/.venv/bin/python3.12 -m pytest tests -q` → **14 个用例全绿**（FastAPI TestClient，打桩 rag 服务层：health/docs 列表与删除/ingest 白名单与防穿越/ask 参数与错误透传，零外部依赖）
+- **统一入口（推荐）**：`cd fastapi-app && rag/.venv/bin/python3.12 -m pytest` → **44 个用例全绿**（pytest.ini 已配置 testpaths，一次跑全量）
+  - rag 核心 30 个：清洗/切块/引用/混合检索纯函数 + 解析降级链与缓存 + ask 错误分支/evaluate 命中率/Prompt 组装
+  - 接口层 14 个：FastAPI TestClient，打桩 rag 服务层（health/docs/ingest 白名单与防穿越/ask 参数与错误透传，零外部依赖）
 - **端到端实测**：health ✓ / 上传入库 ✓ / 文档列表与删除 ✓ / ask（"钱大妈日清模式"、"ResNet 核心创新"）回答 + 引用校验 ✓ / eval 7 用例 100% 命中
 - **前端**：`tsc -b` 类型检查通过；`vite build` 可出产物（highlight.js 版本处理见 web/README.md）
 
 ## 🛠️ 常用命令
 
 ```bash
-# rag 核心单测（纯函数，离线可跑）
-cd fastapi-app && rag/.venv/bin/python3.12 -m pytest rag/tests -q
-# 接口层测试（打桩服务层，不连 Qdrant/LLM）
+# 全量测试（统一入口，pytest.ini 配置 testpaths；离线不打桩外部服务）
+cd fastapi-app && rag/.venv/bin/python3.12 -m pytest
+# 只看 rag 核心单测
+rag/.venv/bin/python3.12 -m pytest rag/tests -q
+# 只看接口层测试
 rag/.venv/bin/python3.12 -m pytest tests -q
 
 # rag CLI（不经 API 直接跑核心）

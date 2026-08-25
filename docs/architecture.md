@@ -94,6 +94,8 @@ rag/main.py.ask(query)
 
 **为什么**：rag 是独立 git 仓库（后来并入 fastapi-app 统一管理、30 个单测、CLI 全保留）。改成包（加 `__init__.py`、相对导入）会破坏它的独立可运行性。sys.path 注入让它「既能独立 CLI 跑，又能当库用」。
 
+**测试分层**：根目录 `pytest.ini` 统一入口（`rag/.venv/bin/python3.12 -m pytest` 一次跑全量 44 例）——rag 层打桩解析器/检索打桩、接口层打桩 `app.services.rag`，全部离线、不碰 Qdrant/LLM。
+
 **坑与规避**：模块名冲突——rag 入口叫 `main`，FastAPI 应用叫 `app.main`，两个 `main` 不会撞（Python 按完整模块名区分）。CLI 的 `python main.py` 走 `__main__`，与 `import main` 不冲突。
 
 ### D2. Qdrant local 免 Docker + 单进程锁
