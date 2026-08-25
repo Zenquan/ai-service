@@ -1,0 +1,20 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# 私有密钥（rag/.env 已有自己的 ignore，这里兜底）
+.env
+
+# 前端依赖与产物（web/.gitignore 已覆盖，这里兜底）
+web/node_modules/
+web/dist/
+
+# 运行时数据（rag/.gitignore 已覆盖：qdrant_data/_parse_cache/uploads/PDF）
+# 说明：rag 已并入本仓库统一管理（不再独立 git）
