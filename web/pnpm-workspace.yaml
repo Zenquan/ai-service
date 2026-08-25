@@ -1,4 +1,8 @@
 # pnpm 11 配置：overrides 移到这里（不再读 package.json 的 pnpm 字段）
-# 修 react-syntax-highlighter 解析到无 sql_more 的 highlight.js@10.4.1（x-markdown 构建失败）
+# 修 react-syntax-highlighter（x-markdown 的传递依赖）构建失败：
+#   - 10.4.1 缺 sql_more.js，10.7.0 才是完整语言集（含 c-like/sql_more）
+#   - ⚠️ 不能写 >=10.7.0：会升级到 11.x（语言文件改为 *.js.js 双后缀结构，
+#     rsh@16 的 async-languages/hljs.js 仍按 10.x 扁平结构 import，照样 fail）
+#   - 因此锁定精确 10.7.0
 overrides:
-  'highlight.js@<10.7.0': '>=10.7.0'
+  highlight.js: 10.7.0
