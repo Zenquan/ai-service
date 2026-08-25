@@ -22,7 +22,7 @@ const themeConfig: ThemeConfig = {
     colorInfo: '#1677ff',
     borderRadius: 8,
     fontSize: 14,
-    colorBgLayout: '#f5f6fa',
+    colorBgLayout: '#f6f8fc',
   },
   components: {
     Layout: {
@@ -32,6 +32,9 @@ const themeConfig: ThemeConfig = {
     Card: { borderRadiusLG: 12 },
   },
 }
+
+// 右侧对话区：纯白背景（替代浅灰）
+const CONTENT_BG = '#ffffff'
 
 export default function App() {
   const { token } = theme.useToken()
@@ -109,7 +112,15 @@ export default function App() {
             >
               <KnowledgePanel />
             </Sider>
-            <Content style={{ background: token.colorBgLayout, minWidth: 0, height: '100%', overflow: 'hidden' }}>
+            <Content
+              style={{
+                background: CONTENT_BG,
+                minWidth: 0,
+                height: '100%',
+                overflow: 'hidden',
+                borderLeft: '1px solid rgba(0,0,0,0.04)',
+              }}
+            >
               <ChatPanel />
             </Content>
           </Layout>
