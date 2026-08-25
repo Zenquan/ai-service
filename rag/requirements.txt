@@ -1,0 +1,18 @@
+# ── 核心依赖（必须装）──────────────────────────────
+qdrant-client>=1.9        # 向量库（local 模式免 Docker）
+fastembed>=0.3            # 本地 embedding（bge-small-zh-v1.5，首次自动下载模型）
+openai>=1.40              # LLM 客户端（DeepSeek OpenAI 兼容端点）
+python-dotenv>=1.0        # .env 配置加载
+requests>=2.31            # rerank 调用硅基流动 HTTP API
+
+# ── 文档解析 ────────────────────────────────────────
+# MinerU 官方云 API SDK（from mineru import MinerU；flash_extract/extract）
+#   ⚠️ 注意：这是 mineru-open-sdk 包，不是 pypi 的 mineru（后者是本地推理引擎，API 不同）
+#   Flash 免费模式（免 token）：MINERU_TOKEN 留空即可，PDF/URL 传官方云解析，适合试用
+#   标准模式（需 token）：       https://mineru.net 免费申请 token 填 .env 的 MINERU_TOKEN
+mineru-open-sdk==0.2.5
+# markitdown 为 MinerU 不可用时的轻量兜底（纯文本/轻量 PDF，论文 PDF 会失败）
+markitdown>=0.0.1
+
+# ── 开发/测试 ──────────────────────────────────────
+pytest>=8.0               # 单测（tests/test_rag.py，纯函数离线可跑）

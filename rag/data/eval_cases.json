@@ -1,0 +1,9 @@
+[
+  {"question": "钱大妈的门店经营模式是什么？", "expect_doc": ["01-钱大妈日清模式.md"], "expect_kw": ["日清", "隔夜菜"]},
+  {"question": "什么是 RAG 检索增强生成？", "expect_doc": ["02-RAG原理.md"], "expect_kw": ["检索", "向量"]},
+  {"question": "RAG 防幻觉的关键是什么？", "expect_doc": ["02-RAG原理.md"], "expect_kw": ["引用", "来源"]},
+  {"question": "晚市清货怎么做？", "expect_doc": ["01-钱大妈日清模式.md"], "expect_kw": ["清货", "降价"]},
+  {"question": "What is the JFT-300M dataset?", "expect_doc": ["DeepFace-ICCV2017.pdf"], "expect_kw": ["JFT-300M", "300M"]},
+  {"question": "What is residual learning in ResNet?", "expect_doc": ["ResNet-CVPR2016.pdf"], "expect_kw": ["residual", "ResNet"]},
+  {"question": "钱大妈不卖什么？", "expect_doc": ["01-钱大妈日清模式.md"], "expect_kw": ["隔夜菜", "隔夜"]}
+]
