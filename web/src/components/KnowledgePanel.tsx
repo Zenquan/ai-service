@@ -1,23 +1,34 @@
-/** 知识库面板：健康状态 + 文件上传 + 文档列表（增删） */
+/** 知识库面板：模型状态 + 统计 + 上传 + 文档列表
+ *
+ * 布局（修复截图里的"内容被裁切"问题）：
+ *  面板 = flex column 100% 高
+ *    ├─ 头部（模型信息行）
+ *    ├─ 上传区（固定，不滚动）
+ *    ├─ 文档列表区（flex:1 min-height:0 → 内部独立滚动）
+ *
+ * UI 细节：
+ * - 统计卡片化（白底圆角），模型名胶囊展示不换行
+ * - Rerank 用 Switch 展示启用状态（语义化，不再像按钮）
+ * - 删除按钮 hover 才显示（减少常驻视觉噪音）
+ */
 
 import { useCallback, useEffect, useState } from 'react'
 import {
   Alert,
   App as AntApp,
-  Badge,
   Button,
   Empty,
   List,
   Popconfirm,
-  Space,
-  Statistic,
+  Switch,
+  Tooltip,
   Typography,
   Upload,
 } from 'antd'
 import {
+  CloudUploadOutlined,
   DeleteOutlined,
   FileTextOutlined,
-  InboxOutlined,
   ReloadOutlined,
 } from '@ant-design/icons'
 import type { UploadProps } from 'antd'
@@ -52,7 +63,7 @@ export default function KnowledgePanel() {
     multiple: true,
     showUploadList: false,
     disabled: uploading,
-    beforeUpload: () => false, // 不自动上传，由下方手动触发
+    beforeUpload: () => false,
     onChange: async (info) => {
       const files = info.fileList.map((f) => f.originFileObj as File).filter(Boolean)
       if (!files.length) return
@@ -84,36 +95,22 @@ export default function KnowledgePanel() {
   }
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 16, padding: '16px 12px', overflow: 'auto' }}>
-      <Typography.Title level={5} style={{ margin: 0 }}>
-        知识库
-      </Typography.Title>
-
-      {/* 健康状态 */}
-      <Space size="large" wrap>
-        <Statistic title="文档数" value={health?.docs ?? '—'} />
-        <Statistic title="Chunk 数" value={health?.chunks ?? '—'} />
-        <Badge status={health?.rerank ? 'success' : 'default'} text={health?.rerank ? 'Rerank 开' : 'Rerank 关'} />
-      </Space>
-      {health && (
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {health.embed_model} · {health.collection}
+    <div
+      style={{
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        padding: '16px 16px 20px',
+        gap: 14,
+        boxSizing: 'border-box',
+      }}
+    >
+      {/* ① 模型状态行 */}
+      <FlexRow>
+        <Typography.Text strong style={{ fontSize: 15 }}>
+          知识库
         </Typography.Text>
-      )}
-
-      {/* 上传 */}
-      <Dragger {...uploadProps} style={{ padding: 8 }}>
-        <p className="ant-upload-drag-icon">
-          <InboxOutlined />
-        </p>
-        <p className="ant-upload-text">{uploading ? '正在入库…' : '点击或拖拽文档到此处'}</p>
-        <p className="ant-upload-hint">支持 PDF / TXT / MD / DOCX / HTML，解析后自动切片入库</p>
-      </Dragger>
-
-      {/* 文档列表 */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        <Space style={{ marginBottom: 8 }} align="center">
-          <Typography.Text strong>文档列表</Typography.Text>
+        <Tooltip title="刷新">
           <Button
             size="small"
             type="text"
@@ -125,16 +122,95 @@ export default function KnowledgePanel() {
               setLoadingDocs(false)
             }}
           />
-        </Space>
-        <div style={{ flex: 1, overflow: 'auto' }}>
+        </Tooltip>
+      </FlexRow>
+
+      {health && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'nowrap', minWidth: 0 }}>
+          <Tooltip title="Embedding 模型">
+            <span
+              style={{
+                fontSize: 11,
+                color: '#1677ff',
+                background: 'rgba(22,119,255,0.08)',
+                padding: '2px 8px',
+                borderRadius: 999,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: 200,
+              }}
+            >
+              {health.embed_model}
+            </span>
+          </Tooltip>
+          <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.35)', whiteSpace: 'nowrap' }}>
+            {health.docs} 文档 · {health.chunks} chunks
+          </span>
+        </div>
+      )}
+
+      {/* ② 统计卡片（两枚并排） */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <StatCard label="文档数" value={health?.docs ?? '—'} />
+        <StatCard label="Chunk 数" value={health?.chunks ?? '—'} />
+      </div>
+
+      {/* Rerank 状态（语义化 Switch，只读展示） */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '8px 12px',
+          background: 'rgba(0,0,0,0.02)',
+          borderRadius: 8,
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 500 }}>Rerank 精排</div>
+          <div style={{ fontSize: 11, color: 'rgba(0,0,0,0.4)' }}>bge-reranker-v2-m3</div>
+        </div>
+        <Switch checked={Boolean(health?.rerank)} size="small" disabled />
+      </div>
+
+      {/* ③ 上传区（固定不滚动） */}
+      <Dragger {...uploadProps} style={{ padding: '12px 8px', borderRadius: 10 }}>
+        <p className="ant-upload-drag-icon" style={{ marginBottom: 8 }}>
+          <CloudUploadOutlined style={{ fontSize: 36, color: '#1677ff' }} />
+        </p>
+        <p className="ant-upload-text" style={{ fontSize: 13, marginBottom: 4 }}>
+          {uploading ? '正在解析入库…' : '点击或拖拽文档到此处'}
+        </p>
+        <p className="ant-upload-hint" style={{ fontSize: 11.5 }}>
+          PDF / TXT / MD / DOCX，自动切片入库
+        </p>
+      </Dragger>
+
+      {/* ④ 文档列表（独立滚动，修复裁切） */}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <Typography.Text strong style={{ marginBottom: 8, fontSize: 13 }}>
+          文档列表{docs.length > 0 ? `（${docs.length}）` : ''}
+        </Typography.Text>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 2 }}>
           {docs.length === 0 ? (
-            <Empty description="暂无文档，先上传一份 PDF/MD" />
+            <div style={{ paddingTop: 40 }}>
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无文档，先上传一份 PDF/MD" />
+            </div>
           ) : (
             <List
               size="small"
               dataSource={docs}
+              split={false}
               renderItem={(item) => (
                 <List.Item
+                  className="kb-list-row"
+                  style={{
+                    padding: '8px 8px',
+                    borderRadius: 8,
+                    background: 'rgba(0,0,0,0.015)',
+                    marginBottom: 6,
+                  }}
                   actions={[
                     <Popconfirm
                       key="del"
@@ -144,17 +220,38 @@ export default function KnowledgePanel() {
                       okText="删除"
                       okButtonProps={{ danger: true }}
                       cancelText="取消"
+                      overlayStyle={{ maxWidth: 320 }}
                     >
-                      <Button type="text" danger size="small" icon={<DeleteOutlined />}>
+                      <Button
+                        type="text"
+                        danger
+                        size="small"
+                        icon={<DeleteOutlined />}
+                        className="kb-delete-btn"
+                        style={{ color: 'rgba(0,0,0,0.35)' }}
+                      >
                         删除
                       </Button>
                     </Popconfirm>,
                   ]}
                 >
                   <List.Item.Meta
-                    avatar={<FileTextOutlined style={{ fontSize: 18, color: '#1677ff' }} />}
-                    title={<Typography.Text ellipsis={{ tooltip: item.doc }} style={{ maxWidth: 180 }}>{item.doc}</Typography.Text>}
-                    description={`${item.chunks} chunks`}
+                    avatar={
+                      <FileTextOutlined style={{ fontSize: 16, color: '#1677ff', marginTop: 2 }} />
+                    }
+                    title={
+                      <Tooltip title={item.doc}>
+                        <Typography.Text
+                          ellipsis={{ tooltip: null }}
+                          style={{ maxWidth: 190, fontSize: 13 }}
+                        >
+                          {item.doc}
+                        </Typography.Text>
+                      </Tooltip>
+                    }
+                    description={
+                      <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.4)' }}>{item.chunks} chunks</span>
+                    }
                   />
                 </List.Item>
               )}
@@ -171,6 +268,31 @@ export default function KnowledgePanel() {
           description="请先启动 FastAPI：rag/.venv/bin/python -m uvicorn app.main:app --port 8000"
         />
       )}
+    </div>
+  )
+}
+
+/** 统计小卡片 */
+function StatCard({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div
+      style={{
+        background: '#fff',
+        border: '1px solid rgba(0,0,0,0.06)',
+        borderRadius: 10,
+        padding: '10px 14px',
+      }}
+    >
+      <div style={{ fontSize: 11, color: 'rgba(0,0,0,0.45)', marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 20, fontWeight: 600, lineHeight: 1.2 }}>{value}</div>
+    </div>
+  )
+}
+
+function FlexRow({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      {children}
     </div>
   )
 }
