@@ -1,0 +1,4 @@
+# pnpm 11 配置：overrides 移到这里（不再读 package.json 的 pnpm 字段）
+# 修 react-syntax-highlighter 解析到无 sql_more 的 highlight.js@10.4.1（x-markdown 构建失败）
+overrides:
+  'highlight.js@<10.7.0': '>=10.7.0'
