@@ -46,6 +46,20 @@ export interface AskResult {
   error: string | null
 }
 
+export interface CustomerMessageResult {
+  conversation_id: string
+  message_id: string
+  answer: string
+  materials: Material[]
+  citations: number[]
+  citation_valid: boolean
+  response_mode: 'answer' | 'clarify' | 'handoff'
+  needs_human: boolean
+  needs_clarification: boolean
+  handoff_reason: string | null
+  error: string | null
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(path, init)
   if (!resp.ok) {
@@ -81,4 +95,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, use_rerank: useRerank ?? null }),
     }),
+
+  customerMessage: (conversationId: string, message: string) =>
+    request<CustomerMessageResult>(
+      `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+      },
+    ),
 }

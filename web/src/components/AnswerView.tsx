@@ -25,6 +25,24 @@ function AnswerView({ msg }: { msg: ChatMessage }) {
 
   return (
     <div style={{ maxWidth: '100%' }}>
+      {msg.responseMode === 'handoff' && (
+        <Alert
+          className="handoff-answer-alert"
+          type="warning"
+          showIcon
+          message="已进入人工接管流程"
+          description={msg.handoffReason ?? '当前问题需要人工客服继续处理'}
+        />
+      )}
+      {msg.responseMode === 'clarify' && (
+        <Alert
+          className="clarify-answer-alert"
+          type="info"
+          showIcon
+          message="需要补充一点信息"
+          description="请提供产品、订单或售后场景，我再继续帮您处理。"
+        />
+      )}
       {/* 正文：Markdown 排版 */}
       <div className="rag-answer" style={{ fontSize: 14, lineHeight: 1.75 }}>
         {msg.text ? (
