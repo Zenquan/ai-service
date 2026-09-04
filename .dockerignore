@@ -1,0 +1,19 @@
+# 上传/构建上下文排除（云端构建时大幅减少上传体积）
+.git
+.gitignore
+.agent
+docs
+*.md
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+.venv
+**/.venv
+rag/.venv
+rag/tests
+rag/*_cache
+tests
+web/node_modules
+web/dist/assets/*.map
+deploy/*.log

@@ -18,3 +18,10 @@ web/dist/
 
 # 运行时数据（rag/.gitignore 已覆盖：qdrant_data/_parse_cache/uploads/PDF）
 # 说明：rag 已并入本仓库统一管理（不再独立 git）
+
+# FastEmbed 本地模型缓存（手动下载，不纳入版本库）
+rag/data/fastembed_cache/
+
+.reasonix/
+
+.workbuddy/

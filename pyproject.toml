@@ -3,7 +3,8 @@ name = "fastapi-app"
 version = "1.0.0"
 description = "RAG 产品：FastAPI 壳 + rag 核心（MinerU 解析 → FastEmbed → Qdrant → 混合检索 + rerank → DeepSeek 生成 + 引用校验）"
 readme = "README.md"
-# ⚠️ 3.13/3.14 无 fastembed 依赖 wheel，必须用 3.10-3.12（项目实际用 3.12）
+# ⚠️ 锁定 Python 3.12（详见 README「为什么锁 3.12」）：rag 核心依赖 fastembed→onnxruntime，
+#   在 macOS x86_64 + 3.13/3.14 下无预编译 wheel，故必须 3.10-3.12，本项目统一用 3.12。
 requires-python = ">=3.10,<3.13"
 dependencies = [
     "fastapi[standard]>=0.141.1",
@@ -17,4 +18,9 @@ dependencies = [
     "mineru-open-sdk==0.2.5",
     "markitdown>=0.0.1",
     "python-multipart>=0.0.9",
+]
+
+[tool.uv.workspace]
+members = [
+    "langgraph",
 ]
