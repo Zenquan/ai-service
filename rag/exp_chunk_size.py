@@ -1,17 +1,15 @@
-"""chunk_size 对比实验：验证"用评测集调参"方法。
+"""结构感知切块粒度对比实验。
 
 对每个候选 chunk_size：
-  1. 解析 + 切块（用该 size）
+  1. 解析 + 结构感知切块（用该 size 作为段落聚合目标）
   2. 清库重建 collection（Qdrant local 单进程，需串行）
   3. 入库
-  4. 跑 eval_cases.json 评估
-输出对比表，选出命中率最高的配置。
+  4. 跑 eval_cases.json，输出 Recall@K / MRR
 
 用法：.venv/bin/python exp_chunk_size.py
 """
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -21,10 +19,11 @@ import config
 from chunker import chunk_text
 from embed_store import ensure_collection, get_client, upsert_chunks
 from ingest import parse_document
+from main import evaluate
+from retrieve import clear_cache
 
-# 候选 chunk_size（overlap 按 12% 随动）
-CANDIDATES = [400, 800, 1500, 3000]
-OVERLAP_RATIO = 0.12
+# 候选 chunk_size（仅控制同章节完整段落的聚合目标）
+CANDIDATES = [300, 600, 900, 1200]
 
 
 def collect_files() -> list[Path]:
@@ -36,17 +35,9 @@ def collect_files() -> list[Path]:
     )
 
 
-def load_cases() -> list[dict]:
-    p = Path(__file__).parent / "data" / "eval_cases.json"
-    if p.exists():
-        return json.loads(p.read_text(encoding="utf-8"))
-    return []
-
-
-def evaluate_at(current: dict, chunk_size: int) -> dict:
-    """清库 → 用指定 size 重新入库 → 评估。返回 {hit, total, rate, detail}。"""
-    overlap = max(1, int(chunk_size * OVERLAP_RATIO))
-    print(f"\n── 实验 chunk_size={chunk_size} overlap={overlap} ──")
+def evaluate_at(chunk_size: int) -> dict:
+    """清库 → 用指定粒度重建 → 离线评估。"""
+    print(f"\n── 实验 chunk_size={chunk_size}（段落聚合目标）──")
 
     # 1. 清库重建
     client = get_client()
@@ -60,45 +51,40 @@ def evaluate_at(current: dict, chunk_size: int) -> dict:
     total_chunks = 0
     for f in collect_files():
         text = parse_document(f)
-        chunks = chunk_text(text, chunk_size=chunk_size, overlap=overlap)
+        chunks = chunk_text(text, chunk_size=chunk_size, overlap=0)
         if not chunks:
             print(f"  ⏭ {f.name}: 无内容")
             continue
-        n = upsert_chunks(chunks, f.name)
+        n = upsert_chunks(chunks, f.relative_to(config.DATA_DIR).as_posix())
         total_chunks += n
     print(f"  入库 chunk 数: {total_chunks}")
+    clear_cache()
 
-    # 3. 评估（检索 topK：期望文档命中 + 期望关键词命中）
-    cases = load_cases()
-    hits = 0
-    detail = []
-    for c in cases:
-        from retrieve import retrieve
-        mats = retrieve(c["question"])
-        joined = " ".join(m["text"] for m in mats)
-        doc_hit = not c.get("expect_doc") or any(d in " ".join(m["doc"] for m in mats) for d in c["expect_doc"])
-        kw_hit = not c.get("expect_kw") or any(kw in joined for kw in c["expect_kw"])
-        ok = doc_hit and kw_hit
-        hits += 1 if ok else 0
-        detail.append({"question": c["question"], "ok": ok, "mats": len(mats)})
-    return {"hit": hits, "total": len(cases), "rate": hits / len(cases), "detail": detail}
+    return evaluate(Path(__file__).parent / "data" / "eval_cases.json", use_rerank=False)
 
 
 def main() -> None:
     results = []
     for size in CANDIDATES:
-        r = evaluate_at({}, size)
+        r = evaluate_at(size)
         results.append({"chunk_size": size, **r})
-        print(f"  → 命中 {r['hit']}/{r['total']} = {r['rate']*100:.0f}%")
+        print(f"  → Recall@5={r['recall_at_k'].get('5', 0):.3f} MRR={r['mrr']:.3f}")
         for d in r["detail"]:
-            print(f"      {'✅' if d['ok'] else '❌'} {d['question']} (检索 {d['mats']} 条)")
+            print(
+                f"      {'✅' if d['ok'] else '❌'} {d['question']} "
+                f"(rank={d['first_relevant_rank']}, MRR={d['mrr']:.3f})"
+            )
 
     print("\n═══ 对比汇总 ═══")
-    best = max(results, key=lambda x: x["rate"])
+    best = max(results, key=lambda x: (x["recall_at_k"].get("5", 0), x["mrr"]))
     for r in results:
         mark = " 👑最优" if r["chunk_size"] == best["chunk_size"] else ""
-        print(f"  chunk_size={r['chunk_size']:<5} 命中率 {r['rate']*100:>3.0f}%  ({r['hit']}/{r['total']}){mark}")
-    print(f"\n建议: chunk_size={best['chunk_size']}")
+        print(
+            f"  chunk_size={r['chunk_size']:<5} "
+            f"Recall@5={r['recall_at_k'].get('5', 0):.3f} "
+            f"MRR={r['mrr']:.3f}{mark}"
+        )
+    print(f"\n建议: chunk_size={best['chunk_size']}（优先 Recall@5，其次 MRR）")
 
 
 if __name__ == "__main__":

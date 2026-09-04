@@ -58,10 +58,20 @@ def ingest_dir(path: str) -> dict:
         return rag_main.ingest(path)
 
 
-def ask(query: str, use_rerank: bool | None = None, top_k: int | None = None) -> dict:
+def ask(
+    query: str,
+    use_rerank: bool | None = None,
+    top_k: int | None = None,
+    rerank_threshold: float | None = None,
+) -> dict:
     """问答（检索+生成+引用校验）。"""
     with rag_lock:
-        return rag_main.ask(query, use_rerank=use_rerank, top_k=top_k)
+        return rag_main.ask(
+            query,
+            use_rerank=use_rerank,
+            top_k=top_k,
+            rerank_threshold=rerank_threshold,
+        )
 
 
 def docs_list() -> list[dict]:

@@ -95,17 +95,36 @@ class TestEvaluate:
         assert out["total"] == 2  # 内置默认用例数
         assert out["rate"] == 0
 
+    def test_reports_recall_at_k_and_mrr(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            rag_main,
+            "retrieve",
+            lambda *_a, **_k: [
+                {"text": "无关", "doc": "other.md", "seq": 0},
+                {"text": "命中", "doc": "target.md", "seq": 2},
+            ],
+        )
+        cases = [{"question": "q1", "relevant": [{"doc": "target.md", "seq": 2}]}]
+
+        out = self._eval(tmp_path, cases, monkeypatch)
+
+        assert out["recall_at_k"]["1"] == 0.0
+        assert out["recall_at_k"]["3"] == 1.0
+        assert out["mrr"] == 0.5
+        assert out["cases"][0]["first_relevant_rank"] == 2
+
 
 # ── generate Prompt 组装 ────────────────────────────────────
 class TestGeneratePrompt:
     def test_prompt_contains_numbered_sources_and_question(self):
         mats = [
-            {"text": "素材一", "doc": "a.md", "seq": 0},
+            {"text": "素材一", "doc": "a.md", "seq": 0, "section": "产品 / 部署"},
             {"text": "素材二", "doc": "b.md", "seq": 1},
         ]
         prompt = _build_user_prompt("我的问题？", mats)
         assert "[来源1]" in prompt and "[来源2]" in prompt
-        assert "（来自《a.md》）" in prompt
+        assert "（来自《a.md》" in prompt
+        assert "章节：产品 / 部署" in prompt
         assert "我的问题？" in prompt
 
     def test_prompt_no_materials_keeps_sections(self):

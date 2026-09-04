@@ -25,7 +25,9 @@ def _build_user_prompt(query: str, materials: list[dict]) -> str:
     """素材编号注入：每个 [N] 对应一条 chunk（text + 出处）。"""
     blocks = []
     for i, m in enumerate(materials, start=1):
-        blocks.append(f"[来源{i}]（来自《{m['doc']}》）\n{m['text']}")
+        section = m.get("section") or m.get("title")
+        label = f"，章节：{section}" if section else ""
+        blocks.append(f"[来源{i}]（来自《{m['doc']}》{label}）\n{m['text']}")
     return (
         f"【资料】\n" + "\n\n".join(blocks) + f"\n\n【问题】\n{query}\n\n请依据资料回答，并标注引用。"
     )

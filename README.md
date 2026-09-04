@@ -36,21 +36,21 @@
 └──────────────────────────────────┬───────────────────────────────────────────┘
                                    ▼
 ┌─────────────────────────── rag/（独立 git 仓库）─────────────────────────────┐
-│  ingest：MinerU 云解析 → clean_text → 段落优先切块(800/100) → FastEmbed(1024) │
-│  ask：   混合检索(关键词+向量 RRF) → rerank → Prompt 注入 → DeepSeek → 校验    │
+│  ingest：MinerU 云解析 → 清洗 → 标题层级/段落感知切块(800目标) → FastEmbed(1024) │
+│  ask：   向量 + 标题加权 BM25 → RRF → rerank/阈值 → Prompt → DeepSeek → 校验 │
 │  qdrant_data/（向量索引 local）· data/_parse_cache/ · data/uploads/           │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **两条主链路**
 
-- **入库**：上传文件 → 落盘 `rag/data/uploads/` → 解析（MinerU 云 → markitdown → 纯文本兜底，带内容 sha256 缓存）→ 清洗（去页眉/URL/HTML/高频短行）→ 切块（段落优先聚合 + overlap）→ FastEmbed 向量化 → Qdrant upsert（稳定 id 幂等覆盖）
-- **问答**：query 向量化 → Qdrant 相似召回（top_k×2 放宽）+ 关键词 BM25 式双路召回 → RRF 融合取 top_k → bge-reranker 精排取 top 3 → 编号素材注入 Prompt → DeepSeek 生成（强制 `[来源N]`）→ 引用校验 → 返回回答 + 素材 + 校验结果
+- **入库**：上传文件 → 落盘 `rag/data/uploads/` → 解析（MinerU 云 → markitdown → 纯文本兜底，带内容 sha256 缓存）→ 清洗 → 按标题层级和段落边界聚合（`chunk_size` 仅为目标，不硬切段落）→ FastEmbed 向量化 → Qdrant upsert；chunk 保存 `chapter/title/section/heading_path`
+- **问答**：query 向量化 → 向量与标题加权 BM25 双路候选 → RRF 融合 → rerank 精排/阈值过滤 → 编号素材注入 Prompt → DeepSeek 生成（强制 `[来源N]`）→ 引用校验
 
 ## 🚀 快速开始（两个终端）
 
 ```bash
-# 1. 后端（Python 3.12；⚠️ 3.13/3.14 无 fastembed wheel）
+# 1. 后端（Python 3.12，见「为什么锁 3.12」）
 cd fastapi-app
 rag/.venv/bin/python3.12 -m uvicorn app.main:app --reload --port 8000
 
@@ -63,6 +63,25 @@ pnpm dev          # http://localhost:5173
 打开 http://localhost:5173：左侧上传 PDF/MD → 入库自动切片；右侧提问，回答带 [来源N] 引用卡片，可展开查看依据素材。
 
 > 密钥配置：`cp rag/.env.example rag/.env`，必填 `DEEPSEEK_API_KEY`；PDF 解析建议填 `MINERU_TOKEN`，精排填 `SILICONFLOW_API_KEY`（详见 rag/README.md「踩坑实录」）。
+
+## 🐍 为什么锁 Python 3.12
+
+**全项目统一使用 Python 3.12**（`pyproject.toml` / `.python-version` / `langgraph.json` / `Dockerfile` 四处已对齐，均为 3.12）。
+
+**原因：`rag` 核心的向量检索链路依赖 `fastembed`，而 `fastembed` 的推理引擎 `onnxruntime` 在 3.13/3.14 下没有预编译 wheel。**
+
+| 依赖 | Python 3.13 / 3.14 支持 | 说明 |
+|------|------------------------|------|
+| `langgraph` | ✅ 支持 | `requires-python = ">=3.10"`，无上限，3.14 实测可装可跑 |
+| `fastembed` 本体 | ✅ 支持 | 纯 Python wheel，不拦新版本 |
+| **`onnxruntime`** | ❌ **不支持** | macOS x86_64 下无 cp313/cp314 wheel（`pip index versions` 返回空；cp314 目前仅 Windows/Linux） |
+
+> 说明：`fastembed` 从 0.x 起默认打包 `onnxruntime` 做本地向量推理，且 3.14 下其依赖 `mmh3` 也无预编译 wheel（需源码编译）。**3.13 同样缺 macOS x86_64 的 onnxruntime wheel**，所以实际是 `<3.13`。
+
+**影响与决策：**
+- `langgraph` 图编排层**本身**不依赖 onnxruntime，单独跑用 3.14 完全没问题；但本项目 langgraph 层显式依赖 `rag`（同 workspace 包），要走通完整 RAG 链路就必须锁 3.12。
+- 为保证**本地开发、LangGraph CLI/Studio、部署容器三者运行版本一致**，`python_version` 统一写 3.12，避免"本地 3.12 能跑、部署却是别的版本"的不一致。
+- 若未来把 langgraph 层与 rag 解耦（不接 fastembed/onnxruntime），可单独放宽 langgraph 到 3.13/3.14。
 
 ## 📂 目录结构
 
@@ -101,8 +120,9 @@ fastapi-app/
 
 1. **rag 零改动接入**：`sys.path` 注入 + 模块名错开（`app.main` vs `rag/main`），CLI/单测/独立 git 历史全保留
 2. **Qdrant local 免 Docker**：与生产远端同 API；单进程锁用 `threading.Lock` + `--workers 1`
-3. **混合检索 RRF**：关键词（中文 2-gram + 英文词）与向量双路召回 → 排名倒数融合，术语精确 + 语义扩展兼顾
-4. **防幻觉闭环**：生成强制 `[来源N]` → 程序校验越界 → 前端「引用校验通过/含越界引用」徽标 + 素材原文展开
+3. **混合检索 RRF**：标题加权 BM25（中文 2-gram + 英文词）与语义向量双路召回 → 排名倒数融合，术语精确 + 语义扩展兼顾
+4. **结构感知切块**：标题路径和段落边界进入 chunk 元数据、embedding 上下文与 Prompt，超长段落保持完整
+5. **防幻觉闭环**：生成强制 `[来源N]` → 程序校验越界 → 前端「引用校验通过/含越界引用」徽标 + 素材原文展开
 5. **工程边界**：上传防路径穿越、三级解析降级、解析缓存、LLM 超时重试、rerank 静默回退
 
 ## ✅ 测试与验证现状
@@ -125,7 +145,8 @@ rag/.venv/bin/python3.12 -m pytest tests -q
 
 # rag CLI（不经 API 直接跑核心）
 cd fastapi-app/rag && .venv/bin/python3.12 main.py ask "钱大妈的日清模式是什么？"
-.venv/bin/python3.12 main.py eval        # 种子问题命中率
+.venv/bin/python3.12 main.py eval        # 离线 Recall@K / MRR
+.venv/bin/python3.12 exp_chunk_size.py  # 比较不同结构切块目标
 
 # 前端
 cd fastapi-app/web && pnpm lint && pnpm build

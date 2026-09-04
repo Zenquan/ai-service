@@ -52,7 +52,7 @@ app/services/rag.py.ingest_files(file_paths)
 rag/main.py.ingest(path)
   │  ④ rag/ingest.py.parse_document：
   │      .txt/.md 直通 → sha256 缓存命中 → MinerU 云（有 token extract / 无 token flash）→ markitdown → 二进制兜底
-  │  ⑤ rag/chunker.py：clean_text（去页眉/URL/HTML/高频短行）→ chunk_paragraphs（段落优先 + overlap）
+  │  ⑤ rag/chunker.py：清洗 → 解析标题层级 → 按章节/段落聚合（chunk_size 仅为目标）
   │  ⑥ rag/embed_store.py：FastEmbed(bge-large-en-v1.5, 1024维) → Qdrant upsert
   │     点 id = abs(hash(f"{doc}:{seq}")) % 2^63（稳定，重跑幂等覆盖）
   ▼
@@ -69,10 +69,10 @@ app/services/rag.py.ask(query, use_rerank, top_k)
   ▼
 rag/main.py.ask(query)
   │  ① retrieve()  —— 三层检索
-  │     a. 向量：query 向量化 → Qdrant.query_points(limit=top_k*2)     # 语义召回，放宽
-  │     b. 关键词：_tokenize(中文2-gram+英文词) → 全量 chunk 计数打分    # 术语精确
-  │     c. RRF 融合：score = Σ 1/(k+rank)，k=60，按 (doc,seq) 去重      # 双路互补
-  │     d. rerank（默认开）：硅基流动 bge-reranker-v2-m3 → top 3（失败静默回退）
+  │     a. 向量：query 向量化 → Qdrant 放宽候选                         # 语义召回
+  │     b. 关键词：标题加权 BM25 倒排召回                              # 术语精确
+  │     c. RRF 融合：score = Σ 1/(k+rank)，按 (doc,seq) 去重             # 双路互补
+  │     d. rerank（默认开）：bge-reranker → top 3 + 阈值过滤（失败回退）
   │  ② generate()：
   │     素材编号注入 [来源1]..[来源N]（含出处《doc》）
   │     system 提示：只准用资料、必须 [来源N]、未覆盖写明"资料中未提及"
@@ -108,11 +108,15 @@ rag/main.py.ask(query)
 
 ### D3. 混合检索：关键词 + 向量双路召回，RRF 融合
 
-**为什么不是纯向量**：纯向量对「精确术语/编号」（如 JFT-300M、DeepFace）容易漏召回；纯关键词对「语义等价」（土豆↔马铃薯）失效。双路召回 + RRF 让两个召回器互补。
+**为什么不是纯向量**：纯向量对「精确术语/编号」（如 JFT-300M、DeepFace）容易漏召回；纯关键词对「语义等价」（土豆↔马铃薯）失效。双路召回 + RRF 让两个召回器互补。关键词路由使用缓存倒排索引和 BM25，标题/章节字段额外加权。
 
 **RRF（Reciprocal Rank Fusion）**：对每条结果按排名倒数加权 `score += 1/(60 + rank)`，**不需要归一化分数**——不同召回器的分数量纲不同，直接相加会偏袒某一方；按排名融合天然鲁棒、零调参。
 
-**精排交给 rerank**：融合结果再送 bge-reranker（cross-encoder）做最终排序，取 top 3 注入 Prompt。rerank 失败**静默回退**到融合结果——检索链路绝不因加分项崩溃。
+**精排交给 rerank**：融合候选再送 bge-reranker（cross-encoder）做最终排序，取 top 3 注入 Prompt；可用 `RERANK_SCORE_THRESHOLD` 或请求参数过滤低相关结果。rerank 失败**静默回退**到融合结果。
+
+### D3.1 结构感知切块
+
+`chunk_text()` 先识别 Markdown ATX/Setext 标题，再按空行形成段落记录。每个 chunk 只聚合同一标题路径下的完整段落，`chunk_size` 是聚合目标而非硬上限；超长段落保持完整。每条 chunk 写入 `chapter`、`title`、`section`、`heading_path`，并把章节路径同时加入 embedding 输入和生成 Prompt。
 
 ### D4. 防幻觉闭环（检索→生成→校验→可见）
 
@@ -172,7 +176,11 @@ rag/main.py.ask(query)
     "doc": "rag-test-pdfs/DeepFace-ICCV2017.pdf",  // 文档名（含相对路径）
     "seq": 12,                          // chunk 在文档内顺序（可定位原文）
     "text": "……",                       // chunk 文本
-    "para_range": [3, 5]                // 覆盖段落区间（调试/溯源）
+    "para_range": [3, 5],               // 覆盖段落区间（调试/溯源）
+    "chapter": "产品手册",              // 一级章节
+    "title": "部署",                    // 当前标题
+    "section": "产品手册 / 部署",       // 可读章节路径
+    "heading_path": ["产品手册", "部署"] // 完整标题层级
   }
 }
 ```
@@ -186,7 +194,7 @@ rag/main.py.ask(query)
 
 | 项 | 值 | 为什么 |
 | --- | --- | --- |
-| Python | **3.10–3.12**（项目用 3.12） | 3.13/3.14 无 fastembed 依赖 wheel（onnxruntime/tokenizers）——AI 生态对新版本滞后 |
+| Python | **3.12**（`requires-python >=3.10,<3.13`，全局统一 3.12） | rag 依赖 fastembed→onnxruntime，其 macOS x86_64 下无 cp313/cp314 wheel（详见根 README「为什么锁 3.12」）；langgraph 本身支持 3.14 |
 | HF 下载 | `HF_ENDPOINT=hf-mirror.com` + `HF_HUB_DISABLE_XET=1` | 国内直连 huggingface.co 超时；xet 后端不走镜像 401 |
 | Qdrant | local（path=） | 免 Docker、API 同生产；代价是单进程 |
 | 密钥 | `rag/.env`：DEEPSEEK_API_KEY 必填；MINERU_TOKEN / SILICONFLOW_API_KEY 可选 | 前端绝不能碰密钥（XRequest 安全指南：浏览器禁带 Authorization） |
@@ -198,6 +206,6 @@ rag/main.py.ask(query)
 - [ ] ask 流式（SSE）：`XRequest` 流式解析 + `transformMessage` 增量，`Bubble typing` 效果
 - [ ] 会话历史：`useXConversations` 多会话 + 服务端持久化
 - [ ] 文档重解析/版本更新；上传进度/取消
-- [ ] 检索评估面板：eval 用例可视化（命中率/耗时）
+- [x] 离线检索评估：自建标注集输出 Recall@K / MRR，并支持切块粒度与 rerank 阈值实验
 - [ ] Docker 化：Qdrant 远端 + uvicorn + nginx 静态前端
 - [ ] 权限：多租户知识库隔离（payload 加 namespace 过滤）

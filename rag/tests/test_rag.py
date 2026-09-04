@@ -6,7 +6,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from chunker import chunk_text, clean_text  # noqa: E402
 from citations import verify_citations  # noqa: E402
-from retrieve import _tokenize, _rrf_merge  # noqa: E402
+import retrieve as retrieve_module  # noqa: E402
+from retrieve import _rerank_siliconflow, _rrf_merge, _tokenize  # noqa: E402
 
 
 class TestClean:
@@ -35,12 +36,11 @@ class TestChunk:
         assert len(chunks) == 1
         assert chunks[0]["seq"] == 0
 
-    def test_long_text_multiple_chunks_with_overlap(self):
-        para = "午" * 1000  # 单段超长 → 强制切
+    def test_long_paragraph_is_not_hard_split(self):
+        para = "午" * 1000
         chunks = chunk_text(para, chunk_size=300, overlap=50)
-        assert len(chunks) >= 3
-        # overlap：相邻块尾部/头部应有重复内容
-        assert chunks[0]["text"][-50:] in chunks[1]["text"]
+        assert len(chunks) == 1
+        assert chunks[0]["text"] == para
 
     def test_paragraph_boundary_preferred(self):
         text = "\n".join([f"段落{i}" + "字" * 200 for i in range(6)])
@@ -49,6 +49,24 @@ class TestChunk:
 
     def test_empty_returns_empty(self):
         assert chunk_text("   \n\n  ") == []
+
+    def test_heading_path_is_carried_and_long_paragraph_stays_intact(self):
+        text = "# 产品手册\n\n## 部署\n\n" + "部署说明" * 150
+        chunks = chunk_text(text, chunk_size=100, overlap=50)
+
+        assert len(chunks) == 1
+        assert chunks[0]["heading_path"] == ["产品手册", "部署"]
+        assert chunks[0]["chapter"] == "产品手册"
+        assert chunks[0]["title"] == "部署"
+        assert chunks[0]["section"] == "产品手册 / 部署"
+        assert chunks[0]["text"] == "部署说明" * 150
+
+    def test_paragraph_boundary_preferred_over_target_size(self):
+        text = "# 章节\n\n第一段" + "甲" * 80 + "\n\n第二段" + "乙" * 80
+        chunks = chunk_text(text, chunk_size=100, overlap=0)
+
+        assert len(chunks) == 2
+        assert all("\n\n" not in chunk["text"] for chunk in chunks)
 
 
 class TestCitations:
@@ -88,3 +106,52 @@ class TestMixedRetrieval:
         merged = _rrf_merge(vec, kw)
         # 双路都命中的 (a,1) 排最前（RRF 融合的核心收益）
         assert (merged[0]["doc"], merged[0]["seq"]) == ("a", 1)
+
+    def test_rerank_threshold_filters_low_scores(self, monkeypatch):
+        import requests
+
+        class Response:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {
+                    "results": [
+                        {"index": 0, "relevance_score": 0.91},
+                        {"index": 1, "relevance_score": 0.22},
+                    ]
+                }
+
+        monkeypatch.setattr(requests, "post", lambda *_a, **_k: Response())
+        results = _rerank_siliconflow(
+            "问题",
+            [{"doc": "good", "seq": 0, "text": "相关"}, {"doc": "bad", "seq": 1, "text": "无关"}],
+            threshold=0.5,
+        )
+
+        assert [(item["doc"], item["score"]) for item in results] == [("good", 0.91)]
+
+    def test_keyword_recall_searches_section_metadata(self, monkeypatch):
+        chunks = [{"doc": "manual.md", "seq": 0, "text": "部署内容", "section": "产品手册 / 发布"}]
+        monkeypatch.setattr(retrieve_module, "_all_chunks", lambda: chunks)
+        retrieve_module._keyword_index.cache_clear()
+
+        results = retrieve_module._keyword_retrieve("发布", limit=5)
+
+        assert results[0]["doc"] == "manual.md"
+        retrieve_module._keyword_index.cache_clear()
+
+    def test_missing_rerank_key_keeps_requested_top_k(self, monkeypatch):
+        monkeypatch.setattr(retrieve_module.config, "SILICONFLOW_API_KEY", "")
+        monkeypatch.setattr(
+            retrieve_module,
+            "_vector_retrieve",
+            lambda *_a, **_k: [
+                {"doc": f"doc-{index}", "seq": 0, "text": "x"}
+                for index in range(4)
+            ],
+        )
+
+        results = retrieve_module.retrieve("q", top_k=4, use_rerank=True, use_mixed=False)
+
+        assert len(results) == 4

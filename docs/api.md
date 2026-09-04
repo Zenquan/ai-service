@@ -146,8 +146,9 @@ JSON 请求体：
 | query | string | 必填 | 问题（1–2000 字符） |
 | use_rerank | bool/null | null | null=按配置默认开；false=关闭；true=强制开 |
 | top_k | int/null | null | 检索条数（1–50，默认 config.TOP_K=5） |
+| rerank_threshold | float/null | null | rerank 最低相关性分数；过滤低于阈值的素材 |
 
-流程：混合检索（向量 + 关键词 RRF）→ rerank（可关）→ Prompt 编号注入 → DeepSeek 生成 → 引用校验。
+流程：结构感知 chunk → 向量与标题加权 BM25 双路召回 → RRF → rerank（可关/设阈值）→ Prompt 编号注入 → DeepSeek 生成 → 引用校验。
 
 **200 响应**（实测："钱大妈的门店经营模式是什么？"）：
 
@@ -173,7 +174,7 @@ JSON 请求体：
 | 字段 | 说明 |
 | --- | --- |
 | answer | 生成回答（Markdown 文本，含 `[来源N]` 标记） |
-| materials[] | 注入的素材：text / doc / seq / score |
+| materials[] | 注入的素材：text / doc / seq / score / chapter / title / section / heading_path |
 | citations[] | answer 里出现的来源序号 |
 | citation_valid | 是否全部合法（`false` = 存在越界引用，即模型可能编造） |
 | error | 检索失败/无素材/生成失败时的错误信息；正常为 null |
