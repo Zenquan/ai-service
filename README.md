@@ -2,7 +2,7 @@
 
 把 `rag/`（独立 git 仓库的 RAG 核心）融合进 FastAPI，做成完整 RAG 产品：
 
-- **后端**：FastAPI 提供 REST API（`/api/v1/health | docs | ingest | ask`），rag 作为库零改动接入
+- **后端**：FastAPI 提供 REST API（`/api/v1/health | docs | ingest | ask | conversations`），rag 作为库零改动接入
 - **前端**：Vite + React + TS + **Ant Design X**（Bubble/Sender/Welcome/Prompts/Sources）+ antd 知识库面板
 - **链路**：文件上传 → MinerU 解析 → 自研切片 → FastEmbed 向量 → Qdrant → 混合检索 + rerank → DeepSeek 生成 → 引用校验
 
@@ -31,7 +31,7 @@
            ▼                                       ▼
 ┌─────────────────── FastAPI（uvicorn :8000，--workers 1）────────────────────┐
 │  app/main.py：CORS + 路由挂载（/api/v1/*）                                    │
-│  app/api/：health · docs · ingest · ask                                      │
+│  app/api/：health · docs · ingest · ask · customer_service                   │
 │  app/services/rag.py：融合层（sys.path 注入 rag + threading.Lock 全局锁）      │
 └──────────────────────────────────┬───────────────────────────────────────────┘
                                    ▼
@@ -98,7 +98,7 @@ fastapi-app/
 │   └── data/               # uploads/（前端上传）、_parse_cache/（解析缓存）、qdrant_data/（索引）
 ├── web/                    # 前端（Vite + React + TS + Ant Design X）
 │   ├── src/lib/            # api.ts 客户端 + chat-provider.ts（DefaultChatProvider 透传）
-│   ├── src/components/     # ChatPanel / KnowledgePanel / AnswerView
+│   ├── src/components/     # 客服队列 / ChatPanel / 上下文 / KnowledgePanel
 │   └── vite.config.ts      # dev proxy /api → 127.0.0.1:8000
 └── docs/                   # 本文档体系
     ├── architecture.md     # 架构文档：分层 / 数据流 / 关键设计决策

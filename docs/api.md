@@ -205,6 +205,49 @@ curl -X POST http://127.0.0.1:8000/api/v1/ask \
 
 ---
 
+## 客服会话 API
+
+客服工作台使用会话消息接口。当前会话状态保存在进程内，服务重启后会清空；订单、物流、退款、售后和投诉请求不会调用知识问答，而是返回人工接管状态。
+
+### GET /conversations/{id}
+
+读取会话摘要：
+
+```json
+{
+  "conversation_id": "demo",
+  "created_at": "2026-09-04T09:05:20+00:00",
+  "updated_at": "2026-09-04T09:05:20+00:00",
+  "message_count": 0,
+  "status": "open",
+  "handoff_reason": null
+}
+```
+
+`status` 为 `open`、`waiting` 或 `handoff`，分别表示 AI 处理中、等待补充信息和等待人工接管。
+
+### GET /conversations/{id}/messages
+
+读取当前会话的用户与助手消息列表。
+
+### POST /conversations/{id}/messages
+
+请求体：
+
+```json
+{ "message": "帮我查订单物流" }
+```
+
+知识问题返回 `response_mode=answer`，并携带 `materials`、`citations` 和 `citation_valid`；订单/售后/投诉等请求返回 `response_mode=handoff`、`needs_human=true` 和 `handoff_reason`。
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/conversations/demo/messages \
+  -H "Content-Type: application/json" \
+  -d '{"message":"帮我查订单物流"}'
+```
+
+---
+
 ## 错误码汇总
 
 | 状态码 | 场景 | 前端表现 |

@@ -31,8 +31,12 @@ Phase 0 已完成首个可运行闭环，代码位于 `langgraph/src/langgraph_g
 - LangGraph 图已串起会话初始化、意图路由、RAG 检索、回答生成、引用校验、澄清和转人工。
 - 通过适配器延迟调用现有 `rag.retrieve()` 与 `rag.generate()`，测试时可注入 mock，不强耦合向量库或模型。
 - 已增加知识问答、引用格式、低置信度和业务请求转人工的离线契约测试。
+- 前端已升级为客服工作台：会话队列、AI 对话主区、实时上下文、知识依据和人工接管状态分栏展示。
+- 原知识库管理能力保留为工作台入口，可在弹窗中完成文档上传、删除和库状态查看。
+- 已新增 `GET/POST /api/v1/conversations/{id}` 会话消息接口；当前使用内存会话，知识问题复用 RAG，订单/售后/投诉先安全转人工。
+- 前端客服输入已改为调用会话消息接口，并将本轮召回素材、澄清状态和人工接管状态同步到工作台。
 
-当前客服 Agent 仍作为独立编排模块运行，尚未挂入 FastAPI 主链路；会话持久化、真实业务 Tool、鉴权和 SSE 留在 Phase 1/2。
+FastAPI 会话服务会优先尝试加载 LangGraph Agent；当前运行环境缺少 LangGraph 或 Agent 运行失败时，自动回退到现有 RAG。会话持久化、真实业务 Tool、鉴权和 SSE 留在后续迭代。
 
 ### 已具备
 
@@ -45,7 +49,7 @@ Phase 0 已完成首个可运行闭环，代码位于 `langgraph/src/langgraph_g
 ### 需要补齐
 
 - 当前 `/ask` 是无会话的单轮问答，没有持久化消息和用户身份。
-- LangGraph 尚未接入 FastAPI 主链路，且与 `rag` 的引用格式需要统一为 `[来源N]`。
+- LangGraph 已接入 FastAPI 会话主链路，但需要继续统一运行环境、checkpoint 和生产依赖。
 - 没有意图识别、槽位收集、业务工具、风险控制和转人工机制。
 - 没有会话、消息、工具调用和审计数据模型。
 - 目前的 RAG 指标不足以评价客服任务成功率和工具调用安全性。
@@ -426,8 +430,10 @@ Qdrant payload 继续保存 `chapter/title/section/heading_path`；客服回答�
 
 ### Phase 1：客服 MVP
 
-- 会话和消息存储。
-- 意图识别、知识问答、低置信度追问。
+- [x] MVP 内存会话和消息接口。
+- [x] 订单/售后/投诉安全转人工；知识问答继续复用 RAG。
+- [ ] PostgreSQL 会话持久化与 LangGraph checkpoint。
+- [ ] 意图识别、知识问答、低置信度追问的完整业务闭环。
 - SSE 流式回复。
 - 只读订单/物流 Tool。
 - 引用校验、工具结果校验和基础转人工。
@@ -458,4 +464,4 @@ Qdrant payload 继续保存 `chapter/title/section/heading_path`；客服回答�
 
 ## 14. 当前建议
 
-下一步进入 Phase 1：先将客服 Agent 以懒加载方式挂入 FastAPI，提供会话消息同步接口；随后再接入持久化、SSE 和只读业务 Tool。当前首条可验收闭环是“知识问答 + 低置信度澄清 + 订单/售后请求转人工”。
+下一步优先统一 LangGraph 运行环境并增加 PostgreSQL checkpoint，再增加 SSE 和只读业务 Tool。当前可验收闭环是“会话消息接口 + 知识问答 + 订单/售后请求转人工”。

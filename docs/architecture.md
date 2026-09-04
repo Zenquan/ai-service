@@ -203,6 +203,8 @@ rag/main.py.ask(query)
 
 ## 6. 演进路线（TODO）
 
+智能客服的完整规划见 [docs/customer-service-plan.md](customer-service-plan.md)。当前建议保留 LangGraph 作为客服编排层，`rag/` 继续作为独立检索能力。
+
 - [ ] ask 流式（SSE）：`XRequest` 流式解析 + `transformMessage` 增量，`Bubble typing` 效果
 - [ ] 会话历史：`useXConversations` 多会话 + 服务端持久化
 - [ ] 文档重解析/版本更新；上传进度/取消
