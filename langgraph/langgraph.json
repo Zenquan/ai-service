@@ -1,0 +1,9 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "rag": "langgraph_graph.agent:create_agent",
+    "customer_service": "langgraph_graph.customer_service:create_customer_service_agent"
+  },
+  "env": ".env",
+  "python_version": "3.12"
+}

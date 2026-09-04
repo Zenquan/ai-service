@@ -1,0 +1,12 @@
+# 依赖产物
+.venv/
+__pycache__/
+*.py[oc]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# 本地配置
+.env
+.langgraph/
