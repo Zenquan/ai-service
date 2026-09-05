@@ -418,11 +418,13 @@ textarea:focus-visible {
 
 .conversation-list {
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
 }
 
 .conversation-item {
   width: 100%;
+  max-width: 100%;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -451,6 +453,7 @@ textarea:focus-visible {
 }
 
 .conversation-line {
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -458,6 +461,8 @@ textarea:focus-visible {
 }
 
 .conversation-line strong {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   color: #3d4b66;
   font-size: 11px;
@@ -479,6 +484,8 @@ textarea:focus-visible {
 }
 
 .conversation-summary > span:first-child {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
