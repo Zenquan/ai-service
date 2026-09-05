@@ -3,8 +3,8 @@
 # CloudBase「通过 Git 仓库部署」会在 master push 后拉取仓库源码，
 # 以仓库根目录为 Docker 构建上下文执行本文件，因此：
 #   - 前端必须在镜像内构建（web/dist 不入库、不依赖本地预构建产物）
-#   - 密钥由 server/.env 提供（若构建上下文含该文件则复制进镜像；
-#     CloudBase 环境变量优先级更高，可覆盖 .env 中的同名配置）
+#   - server/.env 不入库、不进镜像；密钥与数据库连接统一由
+#     CloudBase 环境变量注入（DEEPSEEK_API_KEY / MYSQL_* / EMBED_* 等）
 
 # ── 阶段 1：构建前端（Vite + React + TS）──────────────────────────────
 FROM node:22-alpine AS frontend
@@ -42,9 +42,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 后端源码：直接安装 server 包（pyproject.toml 是依赖唯一来源；云端不装 fastembed）
 COPY server ./server
 RUN pip install --no-cache-dir ./server
-
-# 密钥配置：server/.env 保留复制（本地/CI 构建目录需包含该文件）
-COPY server/.env ./server/.env
 
 # 前端产物：从构建阶段复制
 COPY --from=frontend /app/web/dist ./web/dist
