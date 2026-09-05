@@ -1,7 +1,8 @@
 /** 聊天消息模型 + ChatProvider（对接客服会话与兼容问答接口） */
 
 import { DefaultChatProvider, XRequest } from '@ant-design/x-sdk'
-import type { CustomerMessageResult, Material } from './api'
+import type { SSEOutput } from '@ant-design/x-sdk'
+import type { Material } from './api'
 
 /** 一条聊天消息：用户问题 or AI 回答（含引用素材） */
 export interface ChatMessage {
@@ -42,7 +43,6 @@ export type AskOutput = {
   error: string | null
 }
 
-export type CustomerMessageOutput = CustomerMessageResult
 
 /**
  * DefaultChatProvider：透传后端 JSON（非流式）。
@@ -59,9 +59,9 @@ export const ragProvider = new DefaultChatProvider<ChatMessage, AskInput, AskOut
 })
 
 export function createCustomerServiceProvider(conversationId: string) {
-  const provider = new DefaultChatProvider<ChatMessage, CustomerMessageInput, CustomerMessageOutput>({
-    request: XRequest<CustomerMessageInput, CustomerMessageOutput>(
-      `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`,
+  const provider = new DefaultChatProvider<ChatMessage, CustomerMessageInput, SSEOutput>({
+    request: XRequest<CustomerMessageInput, SSEOutput>(
+      `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages/stream`,
       {
         manual: true,
         method: 'POST',
@@ -80,21 +80,46 @@ export function createCustomerServiceProvider(conversationId: string) {
   })
 
   provider.transformMessage = (info) => {
-    const { chunk } = info
+    const { chunk, originMessage } = info
+    const base = (originMessage ?? { role: 'assistant', text: '', materials: [], citations: [] }) as ChatMessage
     if (!chunk) {
-      return { ...(info.originMessage ?? { role: 'assistant', text: '' }) }
+      return { ...base }
     }
-    return {
-      role: 'assistant',
-      text: chunk.answer ?? '',
-      materials: chunk.materials ?? [],
-      citations: chunk.citations ?? [],
-      citationValid: !!chunk.citation_valid,
-      responseMode: chunk.response_mode,
-      needsHuman: chunk.needs_human,
-      needsClarification: chunk.needs_clarification,
-      handoffReason: chunk.handoff_reason,
-      error: chunk.error ?? undefined,
+    // SSE 流式 chunk：{event: 'token'|'materials'|'done'|'meta'|'error', data: {...}}
+    const event = (chunk as { event?: string }).event
+    const data = ((chunk as { data?: Record<string, unknown> }).data ?? chunk) as Record<string, unknown>
+    switch (event) {
+      case 'materials':
+        return { ...base, materials: (data.materials as Material[]) ?? [], text: base.text ?? '' }
+      case 'token':
+        return { ...base, text: `${base.text ?? ''}${data.text ?? ''}` }
+      case 'done':
+        if (data.error) {
+          return { ...base, error: data.error as string }
+        }
+        return {
+          ...base,
+          text: (data.answer as string) ?? base.text,
+          citations: (data.citations as number[]) ?? [],
+          citationValid: !!data.citation_valid,
+        }
+      case 'meta':
+        // 转人工/澄清：完整回答一次到位
+        return {
+          role: 'assistant',
+          text: (data.answer as string) ?? '',
+          materials: (data.materials as Material[]) ?? [],
+          citations: (data.citations as number[]) ?? [],
+          citationValid: !!data.citation_valid,
+          responseMode: data.response_mode as ChatMessage['responseMode'],
+          needsHuman: !!data.needs_human,
+          needsClarification: !!data.needs_clarification,
+          handoffReason: (data.handoff_reason as string) ?? null,
+        }
+      case 'error':
+        return { ...base, error: (data.error as string) ?? '未知错误' }
+      default:
+        return { ...base }
     }
   }
 

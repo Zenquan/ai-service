@@ -269,5 +269,129 @@ class CustomerServiceService:
             for conversation in conversations
         ]
 
+    def stream_message(self, conversation_id: str, message: str):
+        """流式消息（SSE 用）：落库用户消息 → 转人工判定/知识问答流式生成 → 落库回复。
+
+        逐事件 yield dict（与 rag.ask_stream 同构 + meta/end 事件）：
+          {"event": "meta", "response_mode", "handoff_reason", ...}   # 转人工/澄清时（完整回答随 meta）
+          {"event": "materials", "materials": [...]}
+          {"event": "token", "text": "..."}
+          {"event": "done", "answer", "citations", "citation_valid", "message_id"}
+          {"event": "error", "error": "..."}
+        """
+        with self._lock:
+            try:
+                self._active_store.get_or_create_conversation(conversation_id)
+            except StoreUnavailable as exc:
+                self._store_failed(exc)
+                self._active_store.get_or_create_conversation(conversation_id)
+
+            user_message = {
+                "id": str(uuid4()),
+                "role": "user",
+                "content": message,
+                "created_at": _now(),
+            }
+            try:
+                self._active_store.append_message(conversation_id, user_message)
+            except StoreUnavailable as exc:
+                self._store_failed(exc)
+                self._active_store.append_message(conversation_id, user_message)
+
+        handoff_reason = _handoff_reason(message)
+        if handoff_reason:
+            answer = "当前问题需要人工客服继续处理，我已为您准备转接。"
+            yield {
+                "event": "meta",
+                "response_mode": "handoff",
+                "needs_human": True,
+                "needs_clarification": False,
+                "handoff_reason": handoff_reason,
+                "answer": answer,
+                "materials": [],
+                "citations": [],
+                "citation_valid": True,
+            }
+            self._persist_assistant_message(conversation_id, answer, [], "handoff", handoff_reason)
+            yield {"event": "done", "storage": self._storage_mode}
+            return
+
+        # 知识问答：流式生成（暂不走 LangGraph 图——图内 generator 为同步全量接口；
+        # 后续图节点接入流式 generator 时再切换）
+        answer_parts: list[str] = []
+        materials: list[dict] = []
+        final: dict | None = None
+        error: str | None = None
+        for event in rag.ask_stream(message):
+            kind = event.get("event")
+            if kind == "materials":
+                materials = event["materials"]
+                yield event
+            elif kind == "token":
+                answer_parts.append(event["text"])
+                yield event
+            elif kind == "done":
+                final = event
+            elif kind == "error":
+                error = event["error"]
+                yield event
+
+        if error:
+            # 生成失败：不落库 assistant 回复，由前端展示错误
+            yield {"event": "done", "error": error, "storage": self._storage_mode}
+            return
+
+        answer = final["answer"] if final else "".join(answer_parts)
+        citations = final["citations"] if final else []
+        citation_valid = bool(final["citation_valid"]) if final else False
+        self._persist_assistant_message(conversation_id, answer, materials, "answer", None, citations)
+        yield {
+            "event": "done",
+            "answer": answer,
+            "citations": citations,
+            "citation_valid": citation_valid,
+            "storage": self._storage_mode,
+        }
+
+    def _persist_assistant_message(
+        self,
+        conversation_id: str,
+        answer: str,
+        materials: list[dict],
+        response_mode: str,
+        handoff_reason: str | None,
+        citations: list[int] | None = None,
+    ) -> None:
+        """落库 assistant 回复 + 更新会话状态（流式/非流式共用）。"""
+        assistant_message = {
+            "id": str(uuid4()),
+            "role": "assistant",
+            "content": answer,
+            "created_at": _now(),
+            "response_mode": response_mode,
+            "citations": citations or [],
+            "materials": materials,
+            "handoff_reason": handoff_reason,
+        }
+        status = {"handoff": "handoff", "clarify": "waiting"}.get(response_mode, "open")
+        with self._lock:
+            try:
+                self._active_store.append_message(conversation_id, assistant_message)
+                self._active_store.update_conversation(
+                    conversation_id,
+                    status=status,
+                    handoff_reason=handoff_reason,
+                    updated_at=assistant_message["created_at"],
+                )
+            except StoreUnavailable as exc:
+                self._store_failed(exc)
+                self._active_store.append_message(conversation_id, assistant_message)
+                self._active_store.update_conversation(
+                    conversation_id,
+                    status=status,
+                    handoff_reason=handoff_reason,
+                    updated_at=assistant_message["created_at"],
+                )
+
 
 customer_service = CustomerServiceService()

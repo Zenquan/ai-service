@@ -33,17 +33,22 @@ def _build_user_prompt(query: str, materials: list[dict]) -> str:
     )
 
 
-def generate(query: str, materials: list[dict], model: str | None = None) -> dict:
-    """生成并校验引用。返回 {answer, citations, valid}。"""
-    if not config.LLM_API_KEY:
-        raise RuntimeError("缺少 DEEPSEEK_API_KEY（在 .env 里配置）")
-
-    client = OpenAI(
+def _build_client() -> OpenAI:
+    """构建 DeepSeek OpenAI 兼容客户端（超时 + 重试）。"""
+    return OpenAI(
         base_url=config.LLM_BASE_URL,
         api_key=config.LLM_API_KEY,
         timeout=60.0,        # P1 健壮性：显式超时（默认 600s 卡死 worker）
         max_retries=2,       # P1 健壮性：瞬时错误重试（连接/5xx/429），openai SDK 内置指数退避
     )
+
+
+def generate(query: str, materials: list[dict], model: str | None = None) -> dict:
+    """生成并校验引用。返回 {answer, citations, valid}。"""
+    if not config.LLM_API_KEY:
+        raise RuntimeError("缺少 DEEPSEEK_API_KEY（在 .env 里配置）")
+
+    client = _build_client()
     resp = client.chat.completions.create(
         model=model or config.LLM_MODEL,
         messages=[
@@ -56,6 +61,48 @@ def generate(query: str, materials: list[dict], model: str | None = None) -> dic
 
     check = verify_citations(answer, len(materials))
     return {
+        "answer": answer,
+        "citations": check["citations"],
+        "valid": check["valid"],
+        "material_count": len(materials),
+    }
+
+
+def generate_stream(query: str, materials: list[dict], model: str | None = None):
+    """流式生成（SSE 用）：yield token 增量字符串，结束后 yield 校验结果 dict。
+
+    用法：
+        stream = generate_stream(query, materials)
+        for chunk in stream:
+            if isinstance(chunk, str):
+                ... token 增量（"content"）
+            else:
+                ... {"answer", "citations", "valid", "material_count"}（终态）
+    """
+    if not config.LLM_API_KEY:
+        raise RuntimeError("缺少 DEEPSEEK_API_KEY（在 .env 里配置）")
+
+    client = _build_client()
+    response = client.chat.completions.create(
+        model=model or config.LLM_MODEL,
+        messages=[
+            {"role": "system", "content": _SYSTEM},
+            {"role": "user", "content": _build_user_prompt(query, materials)},
+        ],
+        temperature=0.3,
+        stream=True,
+    )
+
+    parts: list[str] = []
+    for chunk in response:
+        delta = chunk.choices[0].delta.content if chunk.choices else None
+        if delta:
+            parts.append(delta)
+            yield delta
+
+    answer = "".join(parts)
+    check = verify_citations(answer, len(materials))
+    yield {
         "answer": answer,
         "citations": check["citations"],
         "valid": check["valid"],

@@ -1,7 +1,10 @@
 """智能客服会话 API。"""
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
@@ -12,6 +15,12 @@ router = APIRouter()
 
 class MessageRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000, description="客户消息")
+
+
+def _sse(event: dict) -> str:
+    """把事件 dict 序列化为 SSE 帧：event: <type>\\ndata: <json>\\n\\n。"""
+    kind = event.pop("event", "message")
+    return f"event: {kind}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
 
 
 @router.get("/conversations")
@@ -35,3 +44,34 @@ async def create_message(conversation_id: str, req: MessageRequest) -> dict:
         return await run_in_threadpool(customer_service.handle_message, conversation_id, req.message)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/conversations/{conversation_id}/messages/stream")
+async def stream_message(conversation_id: str, req: MessageRequest) -> StreamingResponse:
+    """SSE 流式回复：meta/materials/token/done 事件（见 customer_service.stream_message）。
+
+    事件序列：
+      meta      —— 转人工/澄清分支（含完整回答），知识问答分支不发
+      materials —— 检索结果（生成前）
+      token     —— 生成 token 增量（多个）
+      done      —— 终态（answer/citations/citation_valid/storage）
+      error     —— 检索或生成失败
+    """
+
+    def event_source():
+        try:
+            for event in customer_service.stream_message(conversation_id, req.message):
+                payload = dict(event)
+                yield _sse(payload)
+        except Exception as exc:  # noqa: BLE001 —— 流中途异常兜底
+            yield _sse({"event": "error", "error": str(exc)})
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # 关闭反向代理缓冲，保证逐 token 推送
+        },
+    )
