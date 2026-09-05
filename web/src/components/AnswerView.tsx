@@ -1,5 +1,12 @@
-/** AI 回答渲染：Markdown 正文 + 引用校验徽标 + 依据素材卡片 */
+/** AI 回答渲染：Markdown 正文 + 引用校验徽标 + 依据素材卡片
+ *
+ * 流式体验：
+ * - 流式中（loading/updating）按打字机节奏逐字展示，避免 token 一次性刷屏
+ * - 流式中文本尚为空 → 显示「思考中…」
+ * - 完成（success）后立即补全剩余文本
+ */
 
+import { useEffect, useRef, useState } from 'react'
 import { Alert } from 'antd'
 import { CheckCircleFilled, CloseCircleFilled, FileTextOutlined } from '@ant-design/icons'
 import { Sources, XProvider } from '@ant-design/x'
@@ -7,7 +14,60 @@ import { XMarkdown } from '@ant-design/x-markdown'
 import type { Material } from '../lib/api'
 import type { ChatMessage } from '../lib/chat-provider'
 
-function AnswerView({ msg }: { msg: ChatMessage }) {
+type MessageStatus = 'local' | 'loading' | 'updating' | 'success' | 'error' | 'abort' | undefined
+
+const TYPING_TICK_MS = 28
+
+/** 打字机：把「已展示文本」逐步追赶「目标文本」。 */
+function useTypewriter(targetText: string, streaming: boolean): string {
+  const [display, setDisplay] = useState(streaming ? '' : targetText)
+  const displayRef = useRef(display)
+  displayRef.current = display
+
+  useEffect(() => {
+    if (!streaming) {
+      // 完成/历史消息：直接显示全量
+      setDisplay(targetText)
+      return
+    }
+    if (displayRef.current.length >= targetText.length) return
+
+    const timer = window.setInterval(() => {
+      const current = displayRef.current
+      const gap = targetText.length - current.length
+      if (gap <= 0) {
+        window.clearInterval(timer)
+        return
+      }
+      // 差距大时加速（每次多释放几个字），保证不落后太多
+      const step = Math.max(1, Math.ceil(gap / 14))
+      setDisplay(targetText.slice(0, current.length + step))
+    }, TYPING_TICK_MS)
+    return () => window.clearInterval(timer)
+  }, [targetText, streaming])
+
+  return display
+}
+
+function ThinkingDots() {
+  const [dots, setDots] = useState(1)
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setDots((prev) => (prev % 3) + 1)
+    }, 400)
+    return () => window.clearInterval(timer)
+  }, [])
+  return (
+    <span style={{ color: 'rgba(0,0,0,0.4)' }}>
+      思考中{'.'.repeat(dots)}
+    </span>
+  )
+}
+
+function AnswerView({ msg, status }: { msg: ChatMessage; status?: MessageStatus }) {
+  const streaming = status === 'loading' || status === 'updating'
+  const displayText = useTypewriter(msg.text ?? '', streaming)
+
   if (msg.error) {
     return (
       <Alert type="error" showIcon message="这次回答失败了" description={msg.error} />
@@ -43,16 +103,18 @@ function AnswerView({ msg }: { msg: ChatMessage }) {
           description="请提供产品、订单或售后场景，我再继续帮您处理。"
         />
       )}
-      {/* 正文：Markdown 排版 */}
+      {/* 正文：Markdown 排版（流式中逐字展示，空文本时思考中） */}
       <div className="rag-answer" style={{ fontSize: 14, lineHeight: 1.75 }}>
-        {msg.text ? (
-          <XMarkdown content={msg.text} />
+        {displayText ? (
+          <XMarkdown content={displayText} />
+        ) : streaming ? (
+          <ThinkingDots />
         ) : (
           <span style={{ color: 'rgba(0,0,0,0.35)' }}>（空回答）</span>
         )}
       </div>
 
-      {/* 引用校验徽标 + 依据素材 */}
+      {/* 引用校验徽标 + 依据素材（流式完成后展示） */}
       {msg.citations && msg.citations.length > 0 && (
         <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed rgba(0,0,0,0.08)' }}>
           {/* 校验状态 */}
@@ -80,7 +142,7 @@ function AnswerView({ msg }: { msg: ChatMessage }) {
 }
 
 // Sources 组件需要 XProvider 上下文（主题 token）
-export default function AnswerViewWrapped(props: { msg: ChatMessage }) {
+export default function AnswerViewWrapped(props: { msg: ChatMessage; status?: MessageStatus }) {
   return (
     <XProvider>
       <AnswerView {...props} />

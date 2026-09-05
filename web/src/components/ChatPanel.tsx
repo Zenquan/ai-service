@@ -23,7 +23,9 @@ const roles: BubbleListProps['role'] = {
     placement: 'start',
     avatar: <Avatar icon={<RobotOutlined />} style={{ background: '#1677ff' }} />,
     variant: 'filled',
-    contentRender: (content) => <AnswerView msg={content as ChatMessage} />,
+    contentRender: (content, info) => (
+      <AnswerView msg={content as ChatMessage} status={info?.status} />
+    ),
   },
   user: {
     placement: 'end',
