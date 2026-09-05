@@ -97,7 +97,10 @@ export default function ChatPanel({
       <div className="chat-toolbar">
         <div className="chat-title-group">
           <div className="chat-title-avatar"><RobotOutlined /></div>
-          <div><Typography.Title level={4}>AI 客服助手</Typography.Title><span><i className="online-dot" /> 当前会话 · 自动接待</span></div>
+          <div className="chat-title-line">
+            <Typography.Title level={4}>AI 客服助手</Typography.Title>
+            <span className="chat-title-status"><i className="online-dot" />当前会话 · 自动接待</span>
+          </div>
         </div>
         <div className="chat-toolbar-actions"><Tag icon={<SafetyCertificateOutlined />} color="blue">知识库优先</Tag><Button type="text" icon={<InfoCircleOutlined />} /></div>
       </div>

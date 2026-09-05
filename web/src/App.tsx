@@ -69,7 +69,14 @@ export default function App() {
             </aside>
           </div>
         </div>
-        <Modal title="知识库管理" open={knowledgeOpen} footer={null} width={520} onCancel={() => setKnowledgeOpen(false)}>
+        <Modal
+          title="知识库管理"
+          open={knowledgeOpen}
+          footer={null}
+          width={800}
+          styles={{ body: { padding: 0 } }}
+          onCancel={() => setKnowledgeOpen(false)}
+        >
           <div className="knowledge-modal-body"><KnowledgePanel /></div>
         </Modal>
       </AntApp>

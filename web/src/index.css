@@ -614,15 +614,42 @@ textarea:focus-visible {
 }
 
 .chat-title-group .ant-typography-title {
-  margin: 0 0 3px !important;
+  margin: 0 !important;
   color: var(--navy);
   font-size: 16px;
   line-height: 1.15;
 }
 
+.chat-title-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
 .chat-title-group span:not(.online-dot) {
   color: #9ba7b9;
   font-size: 10px;
+}
+
+.chat-title-group .chat-title-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  color: #2e9e6c !important;
+  border-radius: 999px;
+  background: #e9f8f0;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.chat-title-status .online-dot {
+  width: 5px;
+  height: 5px;
+  margin: 0;
+  box-shadow: none;
 }
 
 .chat-title-group .online-dot {
@@ -1194,16 +1221,12 @@ textarea:focus-visible {
 }
 
 .knowledge-modal-body {
-  height: min(70vh, 620px);
+  height: min(74vh, 680px);
   overflow: hidden;
 }
 
 .knowledge-modal-body .ant-upload-drag {
-  min-height: 116px;
-}
-
-.knowledge-modal-body > div {
-  padding-top: 5px !important;
+  min-height: 104px;
 }
 
 .rag-answer p {
