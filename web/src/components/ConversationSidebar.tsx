@@ -12,7 +12,6 @@ import {
   BookOutlined,
   CustomerServiceOutlined,
   DatabaseOutlined,
-  InboxOutlined,
   PlusOutlined,
   SearchOutlined,
   TeamOutlined,
@@ -101,17 +100,6 @@ export default function ConversationSidebar({
       <Button className="new-conversation" type="primary" block icon={<PlusOutlined />} onClick={onNewConversation}>
         新建会话
       </Button>
-
-      <div className="queue-summary">
-        <div className="queue-summary-main">
-          <span className="queue-icon"><InboxOutlined /></span>
-          <div>
-            <Typography.Text strong>我的队列</Typography.Text>
-            <Typography.Text type="secondary">AI 自动接待中</Typography.Text>
-          </div>
-        </div>
-        <Badge count={visibleConversations.filter((item) => item.status !== 'active').length} color="#2563eb" />
-      </div>
 
       <div className="sidebar-tabs">
         <button className={filter === 'all' ? 'is-active' : ''} type="button" onClick={() => setFilter('all')}>全部 <span>{visibleConversations.length}</span></button>
