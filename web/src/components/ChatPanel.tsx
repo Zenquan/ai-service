@@ -107,6 +107,9 @@ export default function ChatPanel({
         key: id,
         role: message.role,
         content: message,
+        // status 必须传给 Bubble（BubbleContext），AnswerView 靠它区分流式/完成
+        // 决定「思考中…」与打字机节奏；只传 loading 会丢流式状态
+        status,
         loading: status === 'loading',
       })),
     [messages],
