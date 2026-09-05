@@ -13,6 +13,11 @@ __pycache__
 rag/.venv
 rag/tests
 rag/*_cache
+rag/data/fastembed_cache
+rag/data/_parse_cache
+rag/data/uploads
+rag/qdrant_data
+**/fastembed_cache
 tests
 web/node_modules
 web/dist/assets/*.map
