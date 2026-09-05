@@ -248,7 +248,6 @@ textarea:focus-visible {
   overflow: hidden;
 }
 
-.sidebar-heading,
 .context-heading,
 .chat-toolbar,
 .chat-policy-bar,
@@ -262,7 +261,6 @@ textarea:focus-visible {
   align-items: center;
 }
 
-.sidebar-heading,
 .context-heading {
   justify-content: space-between;
   padding: 0 4px 17px;
@@ -277,7 +275,6 @@ textarea:focus-visible {
   line-height: 1.4;
 }
 
-.sidebar-heading .ant-typography-title,
 .context-heading .ant-typography-title {
   margin: 3px 0 0 !important;
   color: var(--navy);
@@ -285,17 +282,14 @@ textarea:focus-visible {
   line-height: 1.2;
 }
 
-.sidebar-heading .ant-btn {
-  color: #9aa8bd;
-}
-
 .new-conversation {
-  height: 40px;
+  height: 48px;
+  margin-bottom: 14px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 12px;
   background: var(--blue);
   box-shadow: 0 7px 14px rgba(37, 99, 235, 0.18);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   transition: transform 150ms var(--ease-standard), box-shadow 150ms var(--ease-standard);
 }
@@ -1064,8 +1058,18 @@ textarea:focus-visible {
 
 .route-line .ant-tag {
   margin: 0;
-  color: #7297dd;
-  background: #eff5ff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  padding-inline: 6px;
+  line-height: 18px;
+  font-size: 10px;
+  font-weight: 500;
+  text-align: center;
+  border-radius: 999px;
+  color: #3f9d63;
+  background: #eefaf2;
 }
 
 .route-line.muted {
@@ -1213,25 +1217,7 @@ textarea:focus-visible {
   background: #fff0d3;
 }
 
-.manage-knowledge {
-  height: 35px;
-  flex: 0 0 auto;
-  color: #6e82a4;
-  border-color: #dfe7f2;
-  border-radius: 8px;
-  font-size: 10px;
-}
 
-.manage-knowledge:hover {
-  color: var(--blue) !important;
-  border-color: #9ebcf2 !important;
-  background: #f5f8ff !important;
-}
-
-.manage-knowledge .anticon:last-child {
-  margin-left: 4px;
-  font-size: 9px;
-}
 
 .knowledge-modal-body {
   height: min(74vh, 680px);
@@ -1272,6 +1258,11 @@ textarea:focus-visible {
 
 .route-line.route-active > svg:first-child {
   color: var(--amber);
+}
+
+.route-line.route-active .ant-tag {
+  color: #b07b21;
+  background: #fff0d3;
 }
 
 .rag-answer ul,
