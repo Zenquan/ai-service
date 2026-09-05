@@ -103,7 +103,7 @@ def ask(
         return result
 
     if not result["materials"]:
-        result["error"] = "没有检索到相关素材（请先 ingest 入库）"
+        result["error"] = "知识库中没有检索到足够相关的资料"
         return result
 
     try:

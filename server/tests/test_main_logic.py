@@ -28,7 +28,7 @@ class TestAskErrorBranches:
         """检索无结果 → 引导先入库。"""
         monkeypatch.setattr(rag_main, "retrieve", lambda *_a, **_k: [])
         out = rag_main.ask("问题")
-        assert "没有检索到相关素材" in out["error"]
+        assert "没有检索到足够相关的资料" in out["error"]
 
     def test_generate_failure_sets_error(self, monkeypatch):
         """生成失败 → error 字段。"""

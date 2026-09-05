@@ -129,6 +129,9 @@ def ask(
         if error and _is_empty_kb_error(error):
             result["error"] = None
             result["answer"] = _EMPTY_KB_ANSWER
+        elif error and "没有检索到相关素材" in error:
+            result["error"] = None
+            result["answer"] = _NO_MATERIAL_ANSWER
         return result
 
 
@@ -145,6 +148,12 @@ _EMPTY_KB_ANSWER = (
     "知识库还没有文档，我暂时无法回答这个问题。"
     "请先在「知识库管理」里上传文档（支持 PDF、Word、Markdown、图片等），"
     "上传完成后我就能基于文档内容回答并附上来源引用。"
+)
+
+# 检索有结果但 rerank/阈值后全部被过滤（有知识库但没找到足够相关的内容）
+_NO_MATERIAL_ANSWER = (
+    "我在知识库里没有找到与这个问题足够相关的资料。"
+    "您可以换个说法描述问题，或补充更具体的关键词，我再帮您找找看。"
 )
 
 
@@ -170,11 +179,18 @@ def ask_stream(
             rerank_threshold=rerank_threshold,
         )
     except Exception as exc:  # noqa: BLE001
+        if _is_empty_kb_error(str(exc)):
+            # 空库：正常回答流返回友好文案，不报错
+            yield {"event": "token", "text": _EMPTY_KB_ANSWER}
+            yield {"event": "done", "answer": _EMPTY_KB_ANSWER, "citations": [], "citation_valid": True, "material_count": 0}
+            return
         yield {"event": "error", "error": f"检索失败: {exc}"}
         return
 
     if not materials:
-        yield {"event": "error", "error": "没有检索到相关素材（请先 ingest 入库）"}
+        # 有知识库但没检索到足够相关内容：友好回答流，不报错
+        yield {"event": "token", "text": _NO_MATERIAL_ANSWER}
+        yield {"event": "done", "answer": _NO_MATERIAL_ANSWER, "citations": [], "citation_valid": True, "material_count": 0}
         return
 
     yield {"event": "materials", "materials": materials}

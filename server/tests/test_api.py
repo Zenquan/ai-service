@@ -140,7 +140,7 @@ class TestAsk:
             lambda q, use_rerank=None, top_k=None: {
                 "query": q, "materials": [], "answer": "", "citations": [],
                 "citation_valid": False, "material_count": 0,
-                "error": "没有检索到相关素材（请先 ingest 入库）",
+                "error": "知识库中没有检索到足够相关的资料",
             },
         )
         r = client.post("/api/v1/ask", json={"query": "问题？"})
