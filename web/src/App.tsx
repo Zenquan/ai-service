@@ -69,7 +69,7 @@ export default function App() {
         <div className="support-app">
           <header className="support-header">
             <div className="brand-lockup">
-              <div className="brand-mark">N</div>
+              <img className="brand-mark" src="/logo.png" alt="智应客服中心" />
               <div><strong>智应客服中心</strong><span>AI SERVICE DESK</span></div>
             </div>
             <div className="header-trail"><span>工作台</span><span>/</span><strong>全部会话</strong></div>
