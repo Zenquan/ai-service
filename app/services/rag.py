@@ -9,9 +9,12 @@
 """
 from __future__ import annotations
 
+import logging
 import sys
 import threading
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # rag 目录（本次融合的目标库）
 _RAG_DIR = Path(__file__).resolve().parents[2] / "rag"
@@ -20,7 +23,9 @@ if str(_RAG_DIR) not in sys.path:
 
 # ── 导入 rag 模块（必须在 sys.path 注入之后）──
 import main as rag_main                        # noqa: E402  rag/main.py（ingest/ask/run/evaluate）
-from embed_store import delete_doc, list_docs  # noqa: E402
+from chunker import chunk_text                 # noqa: E402
+from embed_store import delete_doc, list_docs, upsert_chunks  # noqa: E402
+from ingest import parse_document              # noqa: E402
 from retrieve import clear_cache               # noqa: E402
 import config as rag_config                    # noqa: E402
 
@@ -36,26 +41,75 @@ rag_lock = threading.Lock()
 UPLOAD_DIR: Path = _RAG_DIR / "data" / "uploads"
 
 
+def _ingest_one(path: Path, doc_name: str, stats: dict, doc_store) -> None:
+    """单文件：解析 → 切块 → 向量化入库 → 切块存 MySQL 云存储。"""
+    raw = parse_document(path)
+    chunks = chunk_text(raw, rag_config.CHUNK_SIZE, rag_config.CHUNK_OVERLAP)
+    if not chunks:
+        stats["skipped"].append({"name": doc_name, "reason": "解析后为空"})
+        return
+    inserted = upsert_chunks(chunks, doc_name)
+    stats["total"] += inserted
+    stats["docs"].append({"name": doc_name, "chunks": len(chunks), "inserted": inserted})
+    # 切块云持久化：MySQL 不可用时降级跳过（不影响本地功能），失败打日志
+    if doc_store is not None:
+        try:
+            doc_store.save_doc(doc_name, chunks)
+        except DocStoreUnavailable as exc:
+            logger.warning("文档切块云存储失败（跳过）: %s", exc)
+
+
+def _collect_files(path: Path) -> list[Path]:
+    """收集目录/文件下所有支持的文档（与 rag_main 相同的扩展名白名单）。"""
+    from main import SUPPORTED_EXTS
+
+    if path.is_file():
+        files = [path]
+    else:
+        files = sorted(
+            p for p in path.rglob("*")
+            if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS
+        )
+    return [f for f in files if f.suffix.lower() in SUPPORTED_EXTS]
+
+
 def ingest_files(file_paths: list[Path]) -> dict:
     """入库若干已落盘的上传文件（逐个 ingest，单文件模式 doc_name=文件名）。
 
     返回 {"total", "docs", "skipped"} —— 与 rag_main.ingest 同构。
+    每个文档的切块同步存 MySQL 云存储（部署后据此重建向量索引）。
     """
+    from app.services.doc_store import DocStoreUnavailable, build_doc_store
+
     with rag_lock:
         stats = {"total": 0, "docs": [], "skipped": []}
+        doc_store = build_doc_store()
         for p in file_paths:
-            one = rag_main.ingest(str(p))          # 单文件模式
-            stats["total"] += one.get("total", 0)
-            stats["docs"].extend(one.get("docs", []))
-            stats["skipped"].extend(one.get("skipped", []))
+            try:
+                _ingest_one(p, p.name, stats, doc_store)
+            except Exception as exc:  # noqa: BLE001 —— 单文档失败不中断批量
+                stats["skipped"].append({"name": p.name, "reason": str(exc)})
         clear_cache()
         return stats
 
 
 def ingest_dir(path: str) -> dict:
     """入库服务端目录（CLI 同款入口，供运维/调试）。"""
+    from app.services.doc_store import DocStoreUnavailable, build_doc_store
+
     with rag_lock:
-        return rag_main.ingest(path)
+        target = Path(path)
+        stats = {"total": 0, "docs": [], "skipped": []}
+        files = _collect_files(target)
+        doc_store = build_doc_store()
+        for f in files:
+            doc_name = str(f.relative_to(target)) if target.is_dir() else f.name
+            try:
+                _ingest_one(f, doc_name, stats, doc_store)
+            except Exception as exc:  # noqa: BLE001
+                stats["skipped"].append({"name": doc_name, "reason": str(exc)})
+        clear_cache()
+        return stats
 
 
 def ask(
@@ -106,11 +160,59 @@ def docs_list() -> list[dict]:
 
 
 def docs_delete(doc_name: str) -> int:
-    """删除单个文档，返回删除 chunk 数。"""
+    """删除单个文档，返回删除 chunk 数。同步删除 MySQL 云存储记录。"""
+    from app.services.doc_store import DocStoreUnavailable, build_doc_store
+
     with rag_lock:
         n = delete_doc(doc_name)
         clear_cache()
+        doc_store = build_doc_store()
+        if doc_store is not None:
+            try:
+                doc_store.delete_doc(doc_name)
+            except DocStoreUnavailable as exc:
+                logger.warning("删除文档云存储记录失败（跳过）: %s", exc)
         return n
+
+
+def restore_from_cloud() -> dict:
+    """Qdrant 集合为空且 MySQL 有文档切块时，从云存储重建向量索引。
+
+    场景：每次重新部署镜像，容器本地 Qdrant（rag/qdrant_data）被清空；
+    启动后调用本函数，从 MySQL 读回切块重新向量化入库（走远程 embedding）。
+    返回 {"restored_docs": int, "restored_chunks": int, "error": str|None}。
+    """
+    from app.services.doc_store import DocStoreUnavailable, build_doc_store
+
+    with rag_lock:
+        result = {"restored_docs": 0, "restored_chunks": 0, "error": None}
+        # 本地 Qdrant 已有文档则无需重建
+        try:
+            if list_docs():
+                return result
+        except Exception:  # noqa: BLE001 —— 集合不存在等视为空库，继续重建
+            pass
+        doc_store = build_doc_store()
+        if doc_store is None:
+            return result
+        try:
+            cloud_docs = doc_store.list_docs()
+        except DocStoreUnavailable as exc:
+            result["error"] = f"读取云文档失败: {exc}"
+            return result
+        for doc in cloud_docs:
+            doc_name = doc["doc_name"]
+            chunks = doc["chunks"]
+            if not chunks:
+                continue
+            try:
+                inserted = upsert_chunks(chunks, doc_name)
+                result["restored_docs"] += 1
+                result["restored_chunks"] += inserted
+            except Exception as exc:  # noqa: BLE001 —— 单文档重建失败不中断
+                logger.warning("重建文档 %s 失败: %s", doc_name, exc)
+        clear_cache()
+        return result
 
 
 def health() -> dict:

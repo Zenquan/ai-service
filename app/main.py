@@ -5,18 +5,43 @@
 """
 from __future__ import annotations
 
+import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 
 from app.api import ask, customer_service, docs, health, ingest
+from app.services import rag
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """启动时重建 RAG 云存储：部署后 Qdrant 本地集合为空且 MySQL 有文档切块时重建向量索引。"""
+    try:
+        result = await run_in_threadpool(rag.restore_from_cloud)
+        if result["restored_docs"]:
+            logger.info(
+                "RAG 云存储重建完成：%d 份文档 / %d chunks",
+                result["restored_docs"], result["restored_chunks"],
+            )
+        elif result.get("error"):
+            logger.warning("RAG 云存储重建跳过: %s", result["error"])
+    except Exception:  # noqa: BLE001 —— 重建失败不影响服务启动
+        logger.exception("RAG 云存储重建异常（已降级，文档可稍后重传）")
+    yield
+
 
 app = FastAPI(
     title="RAG 产品 · fastapi-app × rag",
     description="FastAPI 壳 + rag 核心：文档入库（MinerU 解析）→ FastEmbed 向量 → Qdrant → 混合检索 + rerank → DeepSeek 生成 + 引用校验",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # 前端 dev server（Vite）跨域
