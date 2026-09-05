@@ -1,10 +1,10 @@
-# fastapi-app · RAG 产品（FastAPI × RAG → Ant Design X）
+# fastapi-app · RAG 客服产品（FastAPI + RAG + LangGraph → Ant Design X）
 
-把 `rag/`（独立 git 仓库的 RAG 核心）融合进 FastAPI，做成完整 RAG 产品：
+智能客服系统：文档知识库 + 混合检索问答 + LangGraph 客服编排（意图识别 / 澄清 / 转人工）+ 会话与文档云端持久化。
 
-- **后端**：FastAPI 提供 REST API（`/api/v1/health | docs | ingest | ask | conversations`），rag 作为库零改动接入
-- **前端**：Vite + React + TS + **Ant Design X**（Bubble/Sender/Welcome/Prompts/Sources）+ antd 知识库面板
-- **链路**：文件上传 → MinerU 解析 → 自研切片 → FastEmbed 向量 → Qdrant → 混合检索 + rerank → DeepSeek 生成 → 引用校验
+- **后端**：单一 `server` Python 包（src 布局）——FastAPI REST API + RAG Core + LangGraph 客服图 + MySQL 持久化
+- **前端**：Vite + React + TS + **Ant Design X**（Bubble/Sender/Sources）+ antd 知识库面板
+- **链路**：文件上传 → MinerU 解析 → 结构感知切块 → 向量化 → Qdrant → 混合检索 + rerank → DeepSeek 生成 → 引用校验
 
 ## ✨ 产品功能
 
@@ -13,46 +13,50 @@
 | 📚 知识库管理 | 拖拽/点选上传（PDF/TXT/MD/DOCX/HTML/图片）、文档列表、chunk 数统计、单文档删除（增量不重建） | 左侧 `KnowledgePanel` |
 | 💬 知识问答 | 混合检索（关键词 + 向量 RRF 融合）→ bge-reranker 精排 → DeepSeek 生成 | 右侧 `ChatPanel`（Bubble.List + Sender） |
 | 🔗 引用溯源 | 回答强制 `[来源N]` 标记 + 程序校验越界引用；引用卡片可展开查看依据素材原文 | `AnswerView`（XMarkdown + Sources） |
-| 🛡️ 健壮性 | MinerU→markitdown→纯文本三级解析降级、云解析 sha256 缓存、LLM 超时重试、rerank 失败静默回退 | 后端 rag 层 |
-| 🔒 安全 | 上传防路径穿越（只取 basename）、扩展名白名单、密钥只存 `rag/.env`（gitignore 双保险） | 后端 ingest 路由 |
+| 🧭 客服编排 | LangGraph 图：意图分类 → 知识问答 / 澄清 / 转人工；多轮历史上下文 | 后端 graph 层 |
+| 💾 云端持久化 | 会话/消息落 MySQL（回退内存显性标注 `storage`）；文档切块存 MySQL，部署后自动重建向量索引 | 后端 services 层 |
+| 🛡️ 健壮性 | MinerU→markitdown→纯文本三级解析降级、云解析 sha256 缓存、LLM 超时重试、rerank 失败静默回退、空库友好回答 | 后端 core 层 |
+| 🔒 安全 | 上传防路径穿越（只取 basename）、扩展名白名单、密钥只存 `server/.env`（gitignore 双保险） | 后端 ingest 路由 |
 
 ## 🏗️ 系统架构
 
 ```
 ┌────────────────────────── 浏览器（Vite dev :5173）──────────────────────────┐
-│  web/  React 19 + TS + Ant Design X                                         │
+│  web/  React + TS + Ant Design X                                            │
 │  ┌────────────────┐        ┌────────────────────────────────────────────┐    │
-│  │ KnowledgePanel │        │ ChatPanel：Welcome/Prompts（空态）           │    │
-│  │ Upload/Docs    │        │ Bubble.List（消息流）                        │    │
-│  │ 列表/删除/健康  │        │ AnswerView：XMarkdown 正文 + Sources 引用卡片 │    │
+│  │ KnowledgePanel │        │ ConversationSidebar（真实会话列表）          │    │
+│  │ Upload/Docs    │        │ ChatPanel：Bubble.List + AnswerView         │    │
 │  └───────┬────────┘        └─────────────────────┬──────────────────────┘    │
 │          │  fetch（Vite proxy /api → 127.0.0.1:8000）                         │
 └──────────┼──────────────────────────────────────┼────────────────────────────┘
            ▼                                       ▼
-┌─────────────────── FastAPI（uvicorn :8000，--workers 1）────────────────────┐
-│  app/main.py：CORS + 路由挂载（/api/v1/*）                                    │
-│  app/api/：health · docs · ingest · ask · customer_service                   │
-│  app/services/rag.py：融合层（sys.path 注入 rag + threading.Lock 全局锁）      │
-└──────────────────────────────────┬───────────────────────────────────────────┘
-                                   ▼
-┌─────────────────────────── rag/（独立 git 仓库）─────────────────────────────┐
-│  ingest：MinerU 云解析 → 清洗 → 标题层级/段落感知切块(800目标) → FastEmbed(1024) │
-│  ask：   向量 + 标题加权 BM25 → RRF → rerank/阈值 → Prompt → DeepSeek → 校验 │
-│  qdrant_data/（向量索引 local）· data/_parse_cache/ · data/uploads/           │
-└──────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────── server 包（uvicorn :8000，--workers 1）──────────────────┐
+│  server/main.py：应用工厂（CORS + 路由 + lifespan 云存储重建）                 │
+│  server/api/：health · docs · ingest · ask · conversations                  │
+│  server/services/：rag 融合层 · customer_service · chat_store · doc_store   │
+│  server/graph/：LangGraph 图（rag 图 + customer_service 图，依赖注入）        │
+│  server/core/：RAG 核心（解析→切块→向量→检索→rerank→生成→引用校验）           │
+└───────────────────────────────┬──────────────────────────────────────────────┘
+                                ▼
+        Qdrant local（server/qdrant_data）    MySQL（会话/文档切块，公网直连）
+        远程 embeddings（EMBED_BASE_URL）      DeepSeek（LLM）+ 硅基流动（rerank）
 ```
 
 **两条主链路**
 
-- **入库**：上传文件 → 落盘 `rag/data/uploads/` → 解析（MinerU 云 → markitdown → 纯文本兜底，带内容 sha256 缓存）→ 清洗 → 按标题层级和段落边界聚合（`chunk_size` 仅为目标，不硬切段落）→ FastEmbed 向量化 → Qdrant upsert；chunk 保存 `chapter/title/section/heading_path`
+- **入库**：上传文件 → 落盘 `server/data/uploads/` → 解析（MinerU 云 → markitdown → 纯文本兜底，带内容 sha256 缓存）→ 清洗 → 按标题层级和段落边界聚合（`chunk_size` 仅为目标，不硬切段落）→ 向量化 → Qdrant upsert → 切块同步存 MySQL（部署后自动重建）
 - **问答**：query 向量化 → 向量与标题加权 BM25 双路候选 → RRF 融合 → rerank 精排/阈值过滤 → 编号素材注入 Prompt → DeepSeek 生成（强制 `[来源N]`）→ 引用校验
 
-## 🚀 快速开始（两个终端）
+## 🚀 快速开始
 
 ```bash
+# 一键启动（后端 :8000 + 前端 :5173）
+./start.sh
+
+# 或手动两个终端
 # 1. 后端（Python 3.12，见「为什么锁 3.12」）
-cd fastapi-app
-rag/.venv/bin/python3.12 -m uvicorn app.main:app --reload --port 8000
+cd fastapi-app/server
+.venv/bin/python -m uvicorn server.main:app --reload --port 8000 --workers 1
 
 # 2. 前端（Vite dev proxy: /api → 127.0.0.1:8000）
 cd fastapi-app/web
@@ -62,92 +66,107 @@ pnpm dev          # http://localhost:5173
 
 打开 http://localhost:5173：左侧上传 PDF/MD → 入库自动切片；右侧提问，回答带 [来源N] 引用卡片，可展开查看依据素材。
 
-> 密钥配置：`cp rag/.env.example rag/.env`，必填 `DEEPSEEK_API_KEY`；PDF 解析建议填 `MINERU_TOKEN`，精排填 `SILICONFLOW_API_KEY`（详见 rag/README.md「踩坑实录」）。
+> **环境准备**：
+> - 后端 venv：`cd server && uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e ".[local]" --group dev`
+> - 密钥配置：`cp server/.env.example server/.env`，必填 `DEEPSEEK_API_KEY`；PDF 解析建议填 `MINERU_TOKEN`，精排填 `SILICONFLOW_API_KEY`
+> - 会话持久化（可选）：`cp .env.local.example .env.local` 并填写 MySQL 连接信息——本地与线上共享同一份会话数据；不配则回退内存存储
 
 ## 🐍 为什么锁 Python 3.12
 
-**全项目统一使用 Python 3.12**（`pyproject.toml` / `.python-version` / `langgraph.json` / `Dockerfile` 四处已对齐，均为 3.12）。
+**全项目统一使用 Python 3.12**（`pyproject.toml` / `server/pyproject.toml` / `.python-version` / `Dockerfile` 已对齐，均为 3.12）。
 
-**原因：`rag` 核心的向量检索链路依赖 `fastembed`，而 `fastembed` 的推理引擎 `onnxruntime` 在 3.13/3.14 下没有预编译 wheel。**
+**原因：本地向量推理依赖 `fastembed`，而 `fastembed` 的推理引擎 `onnxruntime` 在 3.13/3.14 下没有 macOS x86_64 的预编译 wheel。**
 
 | 依赖 | Python 3.13 / 3.14 支持 | 说明 |
 |------|------------------------|------|
 | `langgraph` | ✅ 支持 | `requires-python = ">=3.10"`，无上限，3.14 实测可装可跑 |
 | `fastembed` 本体 | ✅ 支持 | 纯 Python wheel，不拦新版本 |
-| **`onnxruntime`** | ❌ **不支持** | macOS x86_64 下无 cp313/cp314 wheel（`pip index versions` 返回空；cp314 目前仅 Windows/Linux） |
-
-> 说明：`fastembed` 从 0.x 起默认打包 `onnxruntime` 做本地向量推理，且 3.14 下其依赖 `mmh3` 也无预编译 wheel（需源码编译）。**3.13 同样缺 macOS x86_64 的 onnxruntime wheel**，所以实际是 `<3.13`。
+| **`onnxruntime`** | ❌ **不支持** | macOS x86_64 下无 cp313/cp314 wheel（cp314 目前仅 Windows/Linux） |
 
 **影响与决策：**
-- `langgraph` 图编排层**本身**不依赖 onnxruntime，单独跑用 3.14 完全没问题；但本项目 langgraph 层显式依赖 `rag`（同 workspace 包），要走通完整 RAG 链路就必须锁 3.12。
-- 为保证**本地开发、LangGraph CLI/Studio、部署容器三者运行版本一致**，`python_version` 统一写 3.12，避免"本地 3.12 能跑、部署却是别的版本"的不一致。
-- 若未来把 langgraph 层与 rag 解耦（不接 fastembed/onnxruntime），可单独放宽 langgraph 到 3.13/3.14。
+- **云端镜像不需要本地向量推理**：部署时 embedding 走远程 `/embeddings`（`EMBED_BASE_URL`），`fastembed` 是 `[local]` 可选依赖、不进镜像——因此云端其实不受 3.12 限制；锁 3.12 是为了本地开发（本地向量化）与容器行为一致。
+- 若未来本地也切远程 embedding（不再用 fastembed），可整体放宽到 3.13/3.14。
 
 ## 📂 目录结构
 
 ```
 fastapi-app/
-├── app/                    # FastAPI 应用（壳）
-│   ├── main.py             # 应用工厂：CORS + 路由挂载（uvicorn app.main:app）
-│   ├── api/                # REST 路由：health / docs / ingest / ask
-│   └── services/rag.py     # 融合层：rag 作为库导入 + 全局锁 + 上传落盘目录
-├── rag/                    # RAG 核心（独立 git 仓库，CLI 仍可用）
-│   ├── main.py             # ingest/ask/run/eval + CLI
-│   ├── chunker/embed_store/retrieve/generate/ingest/citations/config
-│   ├── tests/              # 30 个单测（清洗/切块/引用/检索/解析缓存/链路分支）
-│   └── data/               # uploads/（前端上传）、_parse_cache/（解析缓存）、qdrant_data/（索引）
-├── web/                    # 前端（Vite + React + TS + Ant Design X）
-│   ├── src/lib/            # api.ts 客户端 + chat-provider.ts（DefaultChatProvider 透传）
-│   ├── src/components/     # 客服队列 / ChatPanel / 上下文 / KnowledgePanel
-│   └── vite.config.ts      # dev proxy /api → 127.0.0.1:8000
-└── docs/                   # 本文档体系
-    ├── architecture.md     # 架构文档：分层 / 数据流 / 关键设计决策
-    └── api.md              # API 参考：请求/响应/错误/curl 示例
+├── server/                      # 后端单一 Python 包（依赖唯一来源）
+│   ├── pyproject.toml           # 依赖声明：核心 + [local]（fastembed）+ dev 组
+│   ├── src/server/
+│   │   ├── main.py              # FastAPI 应用工厂（uvicorn server.main:app）
+│   │   ├── api/                 # REST 路由：health/docs/ingest/ask/conversations
+│   │   ├── services/            # rag 融合层 / customer_service / chat_store / doc_store
+│   │   ├── graph/               # LangGraph 图：rag 图 + customer_service 图（依赖注入）
+│   │   ├── core/                # RAG 核心：chunker/embed_store/retrieve/generate/ingest/citations/config
+│   │   └── cli.py               # CLI：python -m server.cli ingest/ask/run/eval/doc-list/doc-delete
+│   ├── tests/                   # 全量单测（core 纯函数 + 图契约 + API 接口）
+│   ├── data/                    # uploads/（前端上传）、docs/、_parse_cache/、eval_cases.json
+│   ├── qdrant_data/             # Qdrant local 向量索引
+│   └── .env / .env.example      # 密钥配置（不入库）
+├── web/                         # 前端（Vite + React + TS + Ant Design X）
+│   ├── src/lib/                 # api.ts 客户端 + chat-provider.ts（DefaultChatProvider 透传）
+│   ├── src/components/          # 会话侧栏 / ChatPanel / 上下文 / KnowledgePanel
+│   └── vite.config.ts           # dev proxy /api → 127.0.0.1:8000
+├── scripts/sync-deploy-context.sh  # 部署快照同步（CloudBase 云托管 deploy 前执行）
+├── Dockerfile                   # 单容器部署镜像（pip install ./server，不装 fastembed）
+├── start.sh                     # 一键启动前后端
+└── docs/                        # 架构与 API 文档
+    ├── architecture.md          # 分层 / 数据流 / 关键设计决策
+    ├── customer-service-plan.md # 客服系统演进规划（Phase 路线）
+    └── api.md                   # API 参考：请求/响应/错误/curl 示例
 ```
 
 ## 📄 文档导航
 
 | 文档 | 适合谁 | 内容 |
 | --- | --- | --- |
-| [docs/architecture.md](docs/architecture.md) | 面试/接手 | 分层架构、端到端时序、9 个关键设计决策及取舍 |
-| [docs/api.md](docs/api.md) | 联调/二次开发 | 5 个端点完整参考：请求/响应/错误/curl 实测 |
+| [server/README.md](server/README.md) | 后端开发 | server 包结构、开发/测试/部署说明 |
+| [server/README-rag.md](server/README-rag.md) | RAG 原理 | 核心链路、踩坑实录、优化记录 P0/P1 |
+| [server/README-graph.md](server/README-graph.md) | 图编排 | LangGraph 图约定与关键踩坑 |
+| [docs/architecture.md](docs/architecture.md) | 面试/接手 | 分层架构、端到端时序、关键设计决策及取舍 |
+| [docs/api.md](docs/api.md) | 联调/二次开发 | API 端点完整参考：请求/响应/错误/curl 实测 |
+| [docs/customer-service-plan.md](docs/customer-service-plan.md) | 规划 | 智能客服系统 Phase 路线与验收标准 |
 | [web/README.md](web/README.md) | 前端开发 | 前端技术栈、目录语义、chat-provider 原理、构建注意 |
-| [rag/README.md](rag/README.md) | RAG 原理 | 核心链路、踩坑实录 9 条、优化记录 P0/P1 |
-| [rag/tests/](rag/tests/) | 测试 | 30 个纯函数单测（含解析缓存/链路分支），可离线跑 |
-| [tests/test_api.py](tests/test_api.py) | 测试 | 14 个 FastAPI 接口测试（TestClient + 服务层打桩） |
 
 ## 🧠 面试亮点（一句话版）
 
-1. **rag 零改动接入**：`sys.path` 注入 + 模块名错开（`app.main` vs `rag/main`），CLI/单测/独立 git 历史全保留
-2. **Qdrant local 免 Docker**：与生产远端同 API；单进程锁用 `threading.Lock` + `--workers 1`
-3. **混合检索 RRF**：标题加权 BM25（中文 2-gram + 英文词）与语义向量双路召回 → 排名倒数融合，术语精确 + 语义扩展兼顾
-4. **结构感知切块**：标题路径和段落边界进入 chunk 元数据、embedding 上下文与 Prompt，超长段落保持完整
-5. **防幻觉闭环**：生成强制 `[来源N]` → 程序校验越界 → 前端「引用校验通过/含越界引用」徽标 + 素材原文展开
-5. **工程边界**：上传防路径穿越、三级解析降级、解析缓存、LLM 超时重试、rerank 静默回退
+1. **单一后端包 + src 布局**：rag/langgraph/api 三层合并为 `server` 包，正规 `from server.core.retrieve import retrieve` 导入（无 sys.path hack、无模块名碰撞），依赖单一来源 `server/pyproject.toml`
+2. **编排与检索解耦**：LangGraph 图全部依赖注入（retriever/generator/classifier 参数化），契约测试不碰向量库与模型
+3. **优雅降级 + 显性暴露**：LangGraph 不可用回退 RAG 直答；MySQL 不可用回退内存并在响应体带 `storage` 字段；空库时友好回答而非报错
+4. **云端持久化双保险**：会话消息落 MySQL；文档切块同步存 MySQL，服务启动 lifespan 自动重建向量索引——重新部署不丢数据
+5. **Qdrant local 免 Docker**：与生产远端同 API；单进程锁用 `threading.Lock` + `--workers 1`
+6. **混合检索 RRF**：标题加权 BM25（中文 2-gram + 英文词）与语义向量双路召回 → 排名倒数融合
+7. **结构感知切块**：标题路径和段落边界进入 chunk 元数据、embedding 上下文与 Prompt，超长段落保持完整
+8. **防幻觉闭环**：生成强制 `[来源N]` → 程序校验越界 → 前端「引用校验通过/含越界引用」徽标 + 素材原文展开
 
 ## ✅ 测试与验证现状
 
-- **统一入口（推荐）**：`cd fastapi-app && rag/.venv/bin/python3.12 -m pytest` → **44 个用例全绿**（pytest.ini 已配置 testpaths，一次跑全量）
-  - rag 核心 30 个：清洗/切块/引用/混合检索纯函数 + 解析降级链与缓存 + ask 错误分支/evaluate 命中率/Prompt 组装
-  - 接口层 14 个：FastAPI TestClient，打桩 rag 服务层（health/docs/ingest 白名单与防穿越/ask 参数与错误透传，零外部依赖）
-- **端到端实测**：health ✓ / 上传入库 ✓ / 文档列表与删除 ✓ / ask（"钱大妈日清模式"、"ResNet 核心创新"）回答 + 引用校验 ✓ / eval 7 用例 100% 命中
-- **前端**：`tsc -b` 类型检查通过；`vite build` 可出产物（highlight.js 版本处理见 web/README.md）
+- **统一入口（推荐）**：`cd fastapi-app/server && .venv/bin/python -m pytest` → **68 个用例全绿**
+  - core 纯函数：清洗/切块/引用/混合检索 + 解析降级链与缓存 + ask 错误分支/evaluate 命中率/Prompt 组装
+  - graph 图契约：知识问答 / 澄清 / 转人工 / 引用校验重写循环（注入 mock，零外部依赖）
+  - 存储层：MySQL 选择 / 内存回退 / 会话列表
+  - 接口层：FastAPI TestClient，打桩服务层（health/docs/ingest 白名单与防穿越/ask 参数与错误透传/会话 API）
+- **端到端实测**：health ✓ / 上传入库 ✓ / 文档列表与删除 ✓ / ask（"钱大妈日清模式"）回答 + 引用校验 ✓ / 会话消息 storage=mysql 落库 ✓ / 部署重启后向量索引自动重建 ✓
+- **前端**：`tsc --noEmit` 类型检查通过；`vite build` 可出产物
 
 ## 🛠️ 常用命令
 
 ```bash
-# 全量测试（统一入口，pytest.ini 配置 testpaths；离线不打桩外部服务）
-cd fastapi-app && rag/.venv/bin/python3.12 -m pytest
-# 只看 rag 核心单测
-rag/.venv/bin/python3.12 -m pytest rag/tests -q
-# 只看接口层测试
-rag/.venv/bin/python3.12 -m pytest tests -q
+# 全量测试（server/pyproject.toml 已配 pythonpath=["src"]）
+cd fastapi-app/server && .venv/bin/python -m pytest
 
-# rag CLI（不经 API 直接跑核心）
-cd fastapi-app/rag && .venv/bin/python3.12 main.py ask "钱大妈的日清模式是什么？"
-.venv/bin/python3.12 main.py eval        # 离线 Recall@K / MRR
-.venv/bin/python3.12 exp_chunk_size.py  # 比较不同结构切块目标
+# RAG CLI（不经 API 直接跑核心）
+cd fastapi-app/server
+.venv/bin/python -m server.cli ingest data/docs      # 入库
+.venv/bin/python -m server.cli ask "钱大妈的日清模式是什么？"
+.venv/bin/python -m server.cli eval                   # 离线 Recall@K / MRR
+.venv/bin/python -m server.cli doc-list               # 列出库内文档
 
 # 前端
 cd fastapi-app/web && pnpm lint && pnpm build
+
+# 部署（CloudBase 云托管）
+cd fastapi-app && bash scripts/sync-deploy-context.sh # 同步快照（每次部署前）
+# 然后 manageCloudRun deploy，targetPath=.ragapp-deploy-context
 ```
