@@ -45,7 +45,7 @@ def _default_generator() -> Generator:
         api_key=os.getenv("DEEPSEEK_API_KEY", "sk-no-key"),
         base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
     )
-    model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    model = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
 
     def via_openai(question: str, contexts: list[dict], history: list) -> tuple[str, list]:
         messages = [{"role": "user", "content": _build_prompt(question, contexts)}]

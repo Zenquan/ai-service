@@ -267,7 +267,7 @@ const provider = new DeepSeekChatProvider({
     'https://api.deepseek.com/v1/chat/completions',
     {
       manual: true,
-      params: { model: 'deepseek-chat', stream: true },
+      params: { model: 'deepseek-v4-flash', stream: true },
     },
   ),
 });

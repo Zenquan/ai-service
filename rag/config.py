@@ -56,7 +56,7 @@ BM25_B = float(os.getenv("RAG_BM25_B", "0.75"))
 
 # LLM（OpenAI 兼容）
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.deepseek.com")
-LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-chat")
+LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-v4-flash")
 LLM_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 
 # Rerank（硅基流动 bge-reranker-v2-m3；默认开启——有 key 就精排）

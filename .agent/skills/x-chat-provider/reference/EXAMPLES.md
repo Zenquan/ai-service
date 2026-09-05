@@ -22,7 +22,7 @@ const deepseekProvider = new DeepSeekChatProvider({
     {
       manual: true,
       headers: { Authorization: 'Bearer your-api-key' },
-      params: { model: 'deepseek-chat', stream: true },
+      params: { model: 'deepseek-v4-flash', stream: true },
     },
   ),
 });

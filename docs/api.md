@@ -24,7 +24,7 @@ Base URL：`http://127.0.0.1:8000/api/v1`（前端经 Vite proxy `/api` → 同�
   "qdrant_path": ".../rag/qdrant_data",
   "collection": "rag_minimal",
   "rerank": true,
-  "llm_model": "deepseek-chat"
+  "llm_model": "deepseek-v4-flash"
 }
 ```
 
