@@ -58,11 +58,14 @@ export default function ContextPanel({
       <Card className="route-card" bordered={false}>
         <div className="card-section-heading">
           <span className="section-icon blue"><ThunderboltFilled /></span>
-          <div><Typography.Text strong>自动化路由</Typography.Text><Typography.Text type="secondary">当前处理策略</Typography.Text></div>
+          <div className="card-section-copy">
+            <Typography.Text strong>自动化路由</Typography.Text>
+            <Typography.Text type="secondary">当前处理策略</Typography.Text>
+          </div>
         </div>
-        <div className="route-line"><CheckCircleFilled /> <span>意图识别</span><Tag bordered={false} color="blue">已启用</Tag></div>
-        <div className="route-line"><CheckCircleFilled /> <span>混合检索 + RRF</span><Tag bordered={false} color="blue">已启用</Tag></div>
-        <div className={`route-line ${isHandoff ? 'route-active' : 'muted'}`}><ClockCircleOutlined /> <span>订单 / 售后工具</span><Tag bordered={false} color={isHandoff ? 'gold' : undefined}>{isHandoff ? '需人工' : '待接入'}</Tag></div>
+        <div className="route-line"><CheckCircleFilled /> <span className="route-label">意图识别</span><span className="route-badge">已启用</span></div>
+        <div className="route-line"><CheckCircleFilled /> <span className="route-label">混合检索 + RRF</span><span className="route-badge">已启用</span></div>
+        <div className={`route-line ${isHandoff ? 'route-active' : 'muted'}`}><ClockCircleOutlined /> <span className="route-label">订单 / 售后工具</span><span className={`route-badge ${isHandoff ? 'route-badge-warn' : 'route-badge-muted'}`}>{isHandoff ? '需人工' : '待接入'}</span></div>
         <Progress className="route-progress" percent={isHandoff ? 100 : 66} showInfo={false} strokeColor={isHandoff ? '#e59b2e' : '#2563eb'} trailColor="#e8edf5" size="small" />
       </Card>
 

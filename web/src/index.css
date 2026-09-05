@@ -90,7 +90,6 @@ textarea:focus-visible {
 .chat-toolbar-actions,
 .customer-card-top,
 .card-section-heading,
-.queue-summary-main,
 .sidebar-status-card,
 .knowledge-entry,
 .sidebar-footer {
@@ -283,7 +282,9 @@ textarea:focus-visible {
 }
 
 .new-conversation {
-  height: 48px;
+  height: 48px !important;
+  line-height: 1;
+  padding: 0 16px;
   margin-bottom: 14px;
   border: 0;
   border-radius: 12px;
@@ -303,21 +304,6 @@ textarea:focus-visible {
   transform: scale(0.98);
 }
 
-.queue-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 20px 4px 12px;
-  padding: 11px 10px;
-  border-radius: 10px;
-  background: #f7f9fc;
-}
-
-.queue-summary-main {
-  gap: 9px;
-}
-
-.queue-icon,
 .status-card-icon,
 .knowledge-entry-icon,
 .handoff-icon,
@@ -328,22 +314,12 @@ textarea:focus-visible {
   place-items: center;
 }
 
-.queue-icon {
-  width: 28px;
-  height: 28px;
-  color: var(--blue);
-  border-radius: 8px;
-  background: #e8f0ff;
-}
-
-.queue-summary .ant-typography,
 .sidebar-status-card .ant-typography {
   display: block;
   font-size: 11px;
   line-height: 1.45;
 }
 
-.queue-summary .ant-typography-secondary,
 .sidebar-status-card .ant-typography-secondary {
   color: #a1adbe;
   font-size: 10px;
@@ -1028,15 +1004,24 @@ textarea:focus-visible {
   min-width: 0;
 }
 
-.card-section-heading .ant-typography {
-  color: #52617a;
-  font-size: 11px;
+.card-section-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.3;
 }
 
-.card-section-heading .ant-typography-secondary {
+.card-section-copy .ant-typography {
+  color: #52617a;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.card-section-copy .ant-typography-secondary {
   margin-top: 2px;
   color: #a4afbe;
   font-size: 9px;
+  font-weight: 400;
 }
 
 .route-line {
@@ -1051,25 +1036,35 @@ textarea:focus-visible {
   font-size: 12px;
 }
 
-.route-line span {
+.route-line .route-label {
   min-width: 0;
   flex: 1;
 }
 
-.route-line .ant-tag {
-  margin: 0;
+.route-badge {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: fit-content;
-  padding: 0 5px;
-  line-height: 18px;
+  height: 17px;
+  padding: 0 6px;
   font-size: 10px;
   font-weight: 500;
-  text-align: center;
+  line-height: 1;
+  white-space: nowrap;
   border-radius: 999px;
   color: #3f9d63;
   background: #eefaf2;
+}
+
+.route-badge-muted {
+  color: #a0acbc;
+  background: #f4f6f8;
+}
+
+.route-badge-warn {
+  color: #b07b21;
+  background: #fff0d3;
 }
 
 .route-line.muted {
@@ -1078,11 +1073,6 @@ textarea:focus-visible {
 
 .route-line.muted > svg:first-child {
   color: #adb8c7;
-}
-
-.route-line.muted .ant-tag {
-  color: #a0acbc;
-  background: #f4f6f8;
 }
 
 .route-progress {
@@ -1258,11 +1248,6 @@ textarea:focus-visible {
 
 .route-line.route-active > svg:first-child {
   color: var(--amber);
-}
-
-.route-line.route-active .ant-tag {
-  color: #b07b21;
-  background: #fff0d3;
 }
 
 .rag-answer ul,
