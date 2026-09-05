@@ -51,7 +51,7 @@
 
 ```bash
 # 一键启动（后端 :8000 + 前端 :5173）
-./start.sh
+./scripts/start.sh
 
 # 或手动两个终端
 # 1. 后端（Python 3.12，见「为什么锁 3.12」）
@@ -109,8 +109,8 @@ fastapi-app/
 │   ├── src/components/          # 会话侧栏 / ChatPanel / 上下文 / KnowledgePanel
 │   └── vite.config.ts           # dev proxy /api → 127.0.0.1:8000
 ├── scripts/sync-deploy-context.sh  # 部署快照同步（CloudBase 云托管 deploy 前执行）
+├── scripts/start.sh                # 一键启动前后端
 ├── Dockerfile                   # 单容器部署镜像（pip install ./server，不装 fastembed）
-├── start.sh                     # 一键启动前后端
 └── docs/                        # 架构与 API 文档
     ├── architecture.md          # 分层 / 数据流 / 关键设计决策
     ├── customer-service-plan.md # 客服系统演进规划（Phase 路线）

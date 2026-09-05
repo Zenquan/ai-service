@@ -2,10 +2,11 @@
 set -uo pipefail
 
 # 一键启动 RAG 客服产品：FastAPI 后端（:8000）+ Vite 前端（:5173）
-# 用法：./start.sh
-# 可通过环境变量覆盖端口：BACKEND_PORT=8010 FRONTEND_PORT=5174 ./start.sh
+# 用法：./scripts/start.sh
+# 可通过环境变量覆盖端口：BACKEND_PORT=8010 FRONTEND_PORT=5174 ./scripts/start.sh
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# 脚本位于 scripts/ 下，项目根为其上一级
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVER_DIR="$ROOT_DIR/server"
 BACKEND_PORT="${BACKEND_PORT:-8000}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
