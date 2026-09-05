@@ -6,7 +6,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# 显式加载本文件同目录的 .env：uvicorn --reload 的 worker 由 `python -c` 拉起，
+# python-dotenv 的 find_dotenv() 会误判为交互式并按 cwd 查找，导致 rag/.env 读不到。
+_ENV_FILE = Path(__file__).resolve().with_name(".env")
+load_dotenv(_ENV_FILE)
 
 # HF 镜像（国内必需）：fastembed 首次会自动下载 bge-small-zh 模型（约 150MB），
 # 直连 huggingface.co 常超时；设为 hf-mirror.com 走国内镜像（已实测可达）。
