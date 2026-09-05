@@ -19,7 +19,7 @@ from server.core import main as rag_main
 from server.core.chunker import chunk_text
 from server.core.embed_store import delete_doc, list_docs, upsert_chunks
 from server.core.ingest import parse_document
-from server.core.retrieve import clear_cache
+from server.core.retrieve import clear_cache, retrieve
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ UPLOAD_DIR: Path = rag_config.SERVER_ROOT / "data" / "uploads"
 
 
 def _ingest_one(path: Path, doc_name: str, stats: dict, doc_store) -> None:
-    """单文件：解析 → 切块 → 向量化入库 → 切块存 MySQL 云存储。"""
+    """单文件：解析 → 切块 → 向量化入库 → 切块 + 原始文件存 MySQL 云存储。"""
     raw = parse_document(path)
     chunks = chunk_text(raw, rag_config.CHUNK_SIZE, rag_config.CHUNK_OVERLAP)
     if not chunks:
@@ -45,12 +45,13 @@ def _ingest_one(path: Path, doc_name: str, stats: dict, doc_store) -> None:
     inserted = upsert_chunks(chunks, doc_name)
     stats["total"] += inserted
     stats["docs"].append({"name": doc_name, "chunks": len(chunks), "inserted": inserted})
-    # 切块云持久化：MySQL 不可用时降级跳过（不影响本地功能），失败打日志
+    # 云持久化：切块 + 原始文件字节（部署后可重新解析/切块）；MySQL 不可用时降级跳过
     if doc_store is not None:
         try:
-            doc_store.save_doc(doc_name, chunks)
-        except DocStoreUnavailable as exc:
-            logger.warning("文档切块云存储失败（跳过）: %s", exc)
+            raw_bytes = path.read_bytes()
+            doc_store.save_doc(doc_name, chunks, raw_bytes=raw_bytes)
+        except (DocStoreUnavailable, OSError) as exc:
+            logger.warning("文档云存储失败（跳过）: %s", exc)
 
 
 def _collect_files(path: Path) -> list[Path]:
@@ -145,6 +146,57 @@ _EMPTY_KB_ANSWER = (
     "请先在「知识库管理」里上传文档（支持 PDF、Word、Markdown、图片等），"
     "上传完成后我就能基于文档内容回答并附上来源引用。"
 )
+
+
+def ask_stream(
+    query: str,
+    use_rerank: bool | None = None,
+    top_k: int | None = None,
+    rerank_threshold: float | None = None,
+):
+    """流式问答（SSE 用）：检索 → 逐 token 生成 → 引用校验，逐事件 yield。
+
+    事件序列（dict）：
+      {"event": "materials", "materials": [...]}        # 检索结果（生成前）
+      {"event": "token", "text": "..."}                 # 生成 token 增量（多个）
+      {"event": "done", "answer", "citations", "citation_valid"}  # 终态
+      {"event": "error", "error": "..."}                # 失败（检索空/生成异常）
+    """
+    try:
+        materials = retrieve(
+            query,
+            top_k=top_k,
+            use_rerank=use_rerank,
+            rerank_threshold=rerank_threshold,
+        )
+    except Exception as exc:  # noqa: BLE001
+        yield {"event": "error", "error": f"检索失败: {exc}"}
+        return
+
+    if not materials:
+        yield {"event": "error", "error": "没有检索到相关素材（请先 ingest 入库）"}
+        return
+
+    yield {"event": "materials", "materials": materials}
+
+    try:
+        from server.core.generate import generate_stream
+
+        answer_parts: list[str] = []
+        for chunk in generate_stream(query, materials):
+            if isinstance(chunk, str):
+                answer_parts.append(chunk)
+                yield {"event": "token", "text": chunk}
+            else:
+                yield {
+                    "event": "done",
+                    "answer": chunk["answer"],
+                    "citations": chunk["citations"],
+                    "citation_valid": chunk["valid"],
+                    "material_count": chunk["material_count"],
+                }
+    except Exception as exc:  # noqa: BLE001
+        yield {"event": "error", "error": f"生成失败: {exc}"}
 
 
 def docs_list() -> list[dict]:
