@@ -58,6 +58,30 @@ export interface CustomerMessageResult {
   needs_clarification: boolean
   handoff_reason: string | null
   error: string | null
+  storage: 'mysql' | 'memory' | 'memory_fallback'
+}
+
+export interface ConversationSummary {
+  id: string
+  status: 'open' | 'handoff' | 'waiting'
+  handoff_reason: string | null
+  created_at: string
+  updated_at: string
+  message_count: number
+  first_message: string
+  storage?: string
+}
+
+export interface ConversationMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  response_mode: 'answer' | 'clarify' | 'handoff' | null
+  citations: number[] | null
+  materials: Material[] | null
+  needs_human: boolean
+  handoff_reason: string | null
+  created_at: string
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -104,5 +128,12 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message }),
       },
+    ),
+
+  listConversations: () => request<ConversationSummary[]>('/api/v1/conversations'),
+
+  conversationMessages: (conversationId: string) =>
+    request<ConversationMessage[]>(
+      `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`,
     ),
 }

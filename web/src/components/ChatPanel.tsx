@@ -9,6 +9,7 @@ import type { BubbleListProps } from '@ant-design/x'
 import AnswerView from './AnswerView'
 import { createCustomerServiceProvider } from '../lib/chat-provider'
 import type { ChatMessage } from '../lib/chat-provider'
+import { api } from '../lib/api'
 import type { Material } from '../lib/api'
 
 const SUGGESTIONS = [
@@ -33,9 +34,11 @@ const roles: BubbleListProps['role'] = {
 }
 
 export default function ChatPanel({
+  conversationId: propConversationId,
   onMaterialsChange,
   onConversationStateChange,
 }: {
+  conversationId?: string | null
   onMaterialsChange?: (materials: Material[]) => void
   onConversationStateChange?: (state: {
     conversationId: string
@@ -46,10 +49,12 @@ export default function ChatPanel({
   }) => void
 }) {
   const [input, setInput] = useState('')
-  const conversationId = useMemo(() => `web-${crypto.randomUUID()}`, [])
+  // 会话 id：外部传入（选中历史会话 / 新建会话）优先；否则每次新建随机 id
+  const [randomId] = useState(() => `web-${crypto.randomUUID()}`)
+  const conversationId = propConversationId || randomId
   const customerProvider = useMemo(() => createCustomerServiceProvider(conversationId), [conversationId])
 
-  const { messages, onRequest, isRequesting, abort } = useXChat({
+  const { messages, setMessages, onRequest, isRequesting, abort } = useXChat({
     provider: customerProvider,
     requestPlaceholder: { role: 'assistant', text: '正在检索并按资料回答…' },
     requestFallback: (_, { error }) => ({
@@ -59,6 +64,40 @@ export default function ChatPanel({
       materials: [],
     }),
   })
+
+  // 回填历史消息：切到已有会话时（组件按 key 重挂载），拉取该会话的历史消息展示。
+  // 注意：不能用 useState 记录「已加载 id」做守卫——setState 触发 re-render 会让上一个
+  // effect 的 cleanup 把 cancelled 置 true，StrictMode 下第二次 effect 又因守卫提前 return，
+  // 最终请求结果被丢弃、消息永不展示。靠组件 key 重挂载天然保证「一次挂载只加载一次」。
+  useEffect(() => {
+    if (!conversationId) return
+    let cancelled = false
+    api.conversationMessages(conversationId)
+      .then((history) => {
+        if (cancelled) return
+        const restored: ChatMessage[] = history.map((msg) => ({
+          role: msg.role,
+          text: msg.content,
+          materials: msg.materials ?? [],
+          citations: msg.citations ?? [],
+          citationValid: true,
+          responseMode: msg.response_mode ?? undefined,
+          needsHuman: msg.needs_human,
+          handoffReason: msg.handoff_reason,
+        }))
+        setMessages(restored.map((message, index) => ({
+          id: `history-${conversationId}-${index}`,
+          message,
+          status: 'success' as const,
+        })))
+      })
+      .catch(() => {
+        /* 历史拉取失败（新会话无消息/网络异常）静默，不影响新消息 */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [conversationId, setMessages])
 
   const items = useMemo(
     () =>
@@ -77,7 +116,7 @@ export default function ChatPanel({
     onRequest({ message: val.trim() })
   }
 
-  const isEmpty = messages.length === 0
+  const isEmpty = messages.length === 0 && !isRequesting
 
   useEffect(() => {
     const latest = [...messages].reverse().find(({ message }) => message.role === 'assistant')

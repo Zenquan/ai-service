@@ -422,6 +422,19 @@ textarea:focus-visible {
   overflow-y: auto;
 }
 
+.conversation-empty {
+  display: block !important;
+  margin: 6px 4px;
+  padding: 14px 10px;
+  color: #a2adbd !important;
+  font-size: 12px !important;
+  line-height: 1.6;
+  text-align: center;
+  border: 1px dashed #e3e8f0;
+  border-radius: 9px;
+  background: #fafbfd;
+}
+
 .conversation-item {
   width: 100%;
   max-width: 100%;

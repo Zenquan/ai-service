@@ -1,13 +1,14 @@
 /** 智应客服中心：会话队列 + AI 对话 + 实时上下文。 */
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { App as AntApp, Modal, Tooltip } from 'antd'
 import { XProvider } from '@ant-design/x'
 import ChatPanel from './components/ChatPanel'
 import ContextPanel from './components/ContextPanel'
 import ConversationSidebar from './components/ConversationSidebar'
 import KnowledgePanel from './components/KnowledgePanel'
-import type { Material } from './lib/api'
+import { api } from './lib/api'
+import type { ConversationSummary, Material } from './lib/api'
 import type { ChatMessage } from './lib/chat-provider'
 
 const themeConfig = {
@@ -24,6 +25,9 @@ export default function App() {
   const [knowledgeOpen, setKnowledgeOpen] = useState(false)
   const [conversationVersion, setConversationVersion] = useState(0)
   const [materials, setMaterials] = useState<Material[]>([])
+  // 真实会话列表（数据库）+ 当前选中会话（null = 新会话）
+  const [conversations, setConversations] = useState<ConversationSummary[]>([])
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
   const [conversationState, setConversationState] = useState<{
     conversationId: string
     responseMode: ChatMessage['responseMode']
@@ -31,6 +35,33 @@ export default function App() {
     needsClarification: boolean
     handoffReason: string | null
   }>({ conversationId: '', responseMode: undefined, needsHuman: false, needsClarification: false, handoffReason: null })
+
+  // 刷新会话列表（挂载 + 每条消息发送后）
+  const refreshConversations = useCallback(() => {
+    api.listConversations()
+      .then(setConversations)
+      .catch(() => { /* 列表拉取失败静默，不阻塞聊天 */ })
+  }, [])
+
+  useEffect(() => {
+    refreshConversations()
+  }, [refreshConversations])
+
+  // 稳定引用：ChatPanel 的 useEffect 依赖它，inline 函数会导致每次 render 都触发 effect
+  // 从而 setConversationState → App re-render → 新 inline 引用 → effect 再触发 → 无限循环请求
+  const handleConversationStateChange = useCallback(
+    (state: {
+      conversationId: string
+      responseMode: ChatMessage['responseMode']
+      needsHuman: boolean
+      needsClarification: boolean
+      handoffReason: string | null
+    }) => {
+      setConversationState(state)
+      refreshConversations()
+    },
+    [refreshConversations],
+  )
 
   return (
     <XProvider theme={themeConfig}>
@@ -52,8 +83,16 @@ export default function App() {
           <div className="support-layout">
             <aside className="support-sidebar">
               <ConversationSidebar
+                conversations={conversations}
+                activeId={activeConversationId ?? ''}
+                onSelect={(conversationId) => {
+                  setActiveConversationId(conversationId)
+                  setMaterials([])
+                  setConversationState({ conversationId, responseMode: undefined, needsHuman: false, needsClarification: false, handoffReason: null })
+                }}
                 currentStatus={conversationState.needsHuman ? 'handoff' : conversationState.needsClarification ? 'waiting' : 'active'}
                 onNewConversation={() => {
+                  setActiveConversationId(null)
                   setConversationVersion((value) => value + 1)
                   setMaterials([])
                   setConversationState({ conversationId: '', responseMode: undefined, needsHuman: false, needsClarification: false, handoffReason: null })
@@ -62,7 +101,12 @@ export default function App() {
               />
             </aside>
             <main className="support-main">
-              <ChatPanel key={conversationVersion} onMaterialsChange={setMaterials} onConversationStateChange={setConversationState} />
+              <ChatPanel
+                key={`${activeConversationId ?? 'new'}-${conversationVersion}`}
+                conversationId={activeConversationId}
+                onMaterialsChange={setMaterials}
+                onConversationStateChange={handleConversationStateChange}
+              />
             </main>
             <aside className="support-context">
               <ContextPanel materials={materials} onOpenKnowledge={() => setKnowledgeOpen(true)} {...conversationState} />

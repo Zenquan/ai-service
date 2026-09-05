@@ -19,6 +19,7 @@ import {
   SettingOutlined,
   TeamOutlined,
 } from '@ant-design/icons'
+import type { ConversationSummary } from '../lib/api'
 
 type Conversation = {
   id: string
@@ -31,66 +32,67 @@ type Conversation = {
   unread?: number
 }
 
-const conversations: Conversation[] = [
-  {
-    id: 'current',
-    name: '知识库体验会话',
-    summary: '等待客户提问',
-    time: '刚刚',
-    avatar: '知',
-    color: '#2563eb',
-    status: 'active',
-  },
-  {
-    id: 'order',
-    name: '林女士 · 订单咨询',
-    summary: '想了解订单配送进度',
-    time: '09:42',
-    avatar: '林',
-    color: '#0f766e',
-    status: 'waiting',
-    unread: 2,
-  },
-  {
-    id: 'policy',
-    name: '陈先生 · 售后政策',
-    summary: '已由机器人完成答复',
-    time: '昨天',
-    avatar: '陈',
-    color: '#9333ea',
-    status: 'active',
-  },
-  {
-    id: 'handoff',
-    name: '周女士 · 投诉升级',
-    summary: '等待人工客服接管',
-    time: '周一',
-    avatar: '周',
-    color: '#c2410c',
-    status: 'handoff',
-  },
-]
+const AVATAR_COLORS = ['#2563eb', '#0f766e', '#9333ea', '#c2410c', '#be185d', '#4f46e5', '#0e7490', '#b45309']
+
+/** 数据库真实会话 → 侧栏展示项 */
+export function toSidebarItem(item: ConversationSummary): Conversation {
+  const time = new Date(item.updated_at)
+  const timeText = time.toLocaleString('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+  const summaryMap: Record<string, string> = {
+    handoff: '等待人工客服接管',
+    waiting: '等待补充客户信息',
+    open: 'AI 自动接待中',
+  }
+  // 会话标题 = 第一句话的前 N 个字（无消息时回退到转人工原因/默认名）
+  const firstMessage = (item.first_message ?? '').trim()
+  const MAX_TITLE_CHARS = 12
+  const name = firstMessage
+    ? firstMessage.length > MAX_TITLE_CHARS
+      ? `${firstMessage.slice(0, MAX_TITLE_CHARS)}…`
+      : firstMessage
+    : item.handoff_reason
+      ? `会话 · ${item.handoff_reason.slice(0, 8)}`
+      : 'AI 客服会话'
+  const hash = [...item.id].reduce((sum, char) => sum + char.charCodeAt(0), 0)
+  return {
+    id: item.id,
+    name,
+    summary: summaryMap[item.status] ?? 'AI 自动接待中',
+    time: timeText,
+    avatar: '客',
+    color: AVATAR_COLORS[hash % AVATAR_COLORS.length],
+    status: item.status === 'open' ? 'active' : item.status,
+  }
+}
 
 export default function ConversationSidebar({
+  conversations,
+  activeId,
+  onSelect,
   onNewConversation,
   onOpenKnowledge,
   currentStatus = 'active',
 }: {
+  conversations: ConversationSummary[]
+  activeId: string
+  onSelect: (conversationId: string) => void
   onNewConversation: () => void
   onOpenKnowledge: () => void
   currentStatus?: Conversation['status']
 }) {
-  const [activeId, setActiveId] = useState('current')
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'all' | Conversation['status']>('all')
 
-  const visibleConversations = conversations.map((item) => item.id === 'current'
-    ? {
-        ...item,
-        status: currentStatus,
-        summary: currentStatus === 'handoff' ? '等待人工客服接管' : currentStatus === 'waiting' ? '等待补充客户信息' : 'AI 自动接待中',
-      }
-    : item)
+  const visibleConversations = conversations.map((item) =>
+    item.id === activeId && activeId.startsWith('web-')
+      ? { ...toSidebarItem(item), status: currentStatus, summary: currentStatus === 'handoff' ? '等待人工客服接管' : currentStatus === 'waiting' ? '等待补充客户信息' : 'AI 自动接待中' }
+      : toSidebarItem(item),
+  )
   const filteredConversations = visibleConversations.filter((item) =>
     (filter === 'all' || item.status === filter) &&
     `${item.name} ${item.summary}`.toLowerCase().includes(search.toLowerCase()),
@@ -140,12 +142,15 @@ export default function ConversationSidebar({
 
       <div className="conversation-list">
         <Typography.Text className="list-label">最近会话</Typography.Text>
-        {filteredConversations.map((item) => (
+        {filteredConversations.length === 0 ? (
+          <Typography.Text type="secondary" className="conversation-empty">暂无会话，点上方「新建会话」开始</Typography.Text>
+        ) : (
+          filteredConversations.map((item) => (
           <button
             className={`conversation-item ${activeId === item.id ? 'is-selected' : ''}`}
             key={item.id}
             type="button"
-            onClick={() => setActiveId(item.id)}
+            onClick={() => onSelect(item.id)}
           >
             <Badge dot={item.status === 'waiting'} color="#f59e0b" offset={[-2, 28]}>
               <Avatar style={{ background: item.color }}>{item.avatar}</Avatar>
@@ -161,7 +166,8 @@ export default function ConversationSidebar({
               </span>
             </span>
           </button>
-        ))}
+        ))
+        )}
       </div>
 
       <div className="sidebar-spacer" />
