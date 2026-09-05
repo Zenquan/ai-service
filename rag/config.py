@@ -23,9 +23,14 @@ os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 CHUNK_SIZE = int(os.getenv("RAG_CHUNK_SIZE", "800"))
 CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", "0"))
 
-# Embedding（FastEmbed 本地，bge-large-en-v1.5 → 1024 维；文档中英混合选英文强模型）
-EMBED_MODEL = "BAAI/bge-large-en-v1.5"
+# Embedding（默认 FastEmbed 本地，bge-large-en-v1.5 → 1024 维；文档中英混合选英文强模型）
+# 云端/不想把 ~1.3GB 模型打进镜像时，配 EMBED_BASE_URL 切 OpenAI 兼容远程 embeddings 端点
+# （例如硅基流动 https://api.siliconflow.cn/v1），EMBED_API_KEY 留空自动复用 SILICONFLOW_API_KEY。
+EMBED_MODEL = os.getenv("EMBED_MODEL", "BAAI/bge-large-en-v1.5")
 EMBED_DIM = 1024       # 若换模型需同步改（且必须清库重建，向量维度变了旧向量失效）
+EMBED_BASE_URL = os.getenv("EMBED_BASE_URL", "").strip().rstrip("/")
+EMBED_API_KEY = (os.getenv("EMBED_API_KEY", "").strip()
+                 or os.getenv("SILICONFLOW_API_KEY", "").strip())
 
 # Qdrant：默认 local 免 Docker；生产设 QDRANT_URL 即可切远端 server（API 完全一致）
 #   例：QDRANT_URL=http://localhost:6333 或 https://xxxx.cloud.qdrant.io，需鉴权时配 QDRANT_API_KEY
