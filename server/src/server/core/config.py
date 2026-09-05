@@ -1,0 +1,80 @@
+"""统一配置：切块参数 / 向量维度 / 检索 / 集合名。"""
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# server 运行数据根目录（.env、qdrant_data/、data/ 所在目录）。
+# 优先读环境变量 SERVER_HOME（部署时显式指定）；否则回退到当前工作目录——
+# 本地开发从 server/ 目录启动，容器镜像 WORKDIR=/app/server，两者 cwd 即数据根。
+_SERVER_ROOT = Path(os.environ.get("SERVER_HOME", os.getcwd()))
+SERVER_ROOT = _SERVER_ROOT
+
+# 显式加载 .env：uvicorn --reload 的 worker 由 `python -c` 拉起，
+# python-dotenv 的 find_dotenv() 会误判为交互式并按 cwd 查找，导致 .env 读不到。
+_ENV_FILE = _SERVER_ROOT / ".env"
+load_dotenv(_ENV_FILE)
+
+# HF 镜像（国内必需）：fastembed 首次会自动下载 bge-small-zh 模型（约 150MB），
+# 直连 huggingface.co 常超时；设为 hf-mirror.com 走国内镜像（已实测可达）。
+# 已在代码里设置，无需每次命令行 export。
+os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+# 关键：禁用 HF 新版 xet 存储后端（cas-server.xethub.hf.co 国内 401/超时）。
+# 强制走普通 HTTP 下载 → 才会走上面的 HF_ENDPOINT 镜像。
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+
+# 切块：CHUNK_SIZE 是段落聚合目标，不是字符硬上限；overlap 以完整段落为单位。
+CHUNK_SIZE = int(os.getenv("RAG_CHUNK_SIZE", "800"))
+CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", "0"))
+
+# Embedding（默认 FastEmbed 本地，bge-large-en-v1.5 → 1024 维；文档中英混合选英文强模型）
+# 云端/不想把 ~1.3GB 模型打进镜像时，配 EMBED_BASE_URL 切 OpenAI 兼容远程 embeddings 端点
+# （例如硅基流动 https://api.siliconflow.cn/v1），EMBED_API_KEY 留空自动复用 SILICONFLOW_API_KEY。
+EMBED_MODEL = os.getenv("EMBED_MODEL", "BAAI/bge-large-en-v1.5")
+EMBED_DIM = 1024       # 若换模型需同步改（且必须清库重建，向量维度变了旧向量失效）
+EMBED_BASE_URL = os.getenv("EMBED_BASE_URL", "").strip().rstrip("/")
+EMBED_API_KEY = (os.getenv("EMBED_API_KEY", "").strip()
+                 or os.getenv("SILICONFLOW_API_KEY", "").strip())
+
+# Qdrant：默认 local 免 Docker；生产设 QDRANT_URL 即可切远端 server（API 完全一致）
+#   例：QDRANT_URL=http://localhost:6333 或 https://xxxx.cloud.qdrant.io，需鉴权时配 QDRANT_API_KEY
+#   注意：远端 server 支持多进程并发，local（path=）同一目录只允许一个进程
+QDRANT_URL = os.getenv("QDRANT_URL", "")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
+QDRANT_PATH = _SERVER_ROOT / "qdrant_data"
+COLLECTION = "rag_minimal"
+
+# 量化（内存优化，可选）：留空 = 不量化；int8 = 标量量化（内存省 ~3/4，召回精度略降）
+#   仅对"新建集合"生效——已存在的集合不会重建，需 delete_collection 后重新 ingest
+#   适用场景：向量量大、内存吃紧（如 bge-large 1024 维 × 千万级）
+QDRANT_QUANTIZATION = os.getenv("QDRANT_QUANTIZATION", "").strip().lower()  # "" | "int8"
+
+# 检索
+TOP_K = 5
+RERANK_TOP_K = 3       # rerank 后取前 3 注入
+MIXED_DEFAULT = True    # 混合检索默认开：关键词+向量 双路召回 RRF 融合（术语精确命中 + 语义扩展兼顾）
+RETRIEVAL_CANDIDATE_MULTIPLIER = int(os.getenv("RAG_CANDIDATE_MULTIPLIER", "4"))
+RRF_K = int(os.getenv("RAG_RRF_K", "60"))
+BM25_K1 = float(os.getenv("RAG_BM25_K1", "1.2"))
+BM25_B = float(os.getenv("RAG_BM25_B", "0.75"))
+
+# LLM（OpenAI 兼容）
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.deepseek.com")
+LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-v4-flash")
+LLM_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+
+# Rerank（硅基流动 bge-reranker-v2-m3；默认开启——有 key 就精排）
+SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY", "")
+RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
+RERANK_URL = "https://api.siliconflow.cn/v1/rerank"
+RERANK_DEFAULT = True   # ask/retrieve 默认走 rerank；无 key 时自动跳过不报错
+RERANK_SCORE_THRESHOLD = float(os.getenv("RERANK_SCORE_THRESHOLD", "0.3"))
+
+# MinerU v2 SDK：空 token = Flash 免费模式；填 token = 标准模式（https://mineru.net 免费申请）
+MINERU_TOKEN = os.getenv("MINERU_TOKEN", "")
+
+# 文档目录 / 解析缓存（P0：MinerU 云解析结果落盘缓存，文本未变不重复调云）
+DATA_DIR = _SERVER_ROOT / "data" / "docs"
+PARSE_CACHE_DIR = _SERVER_ROOT / "data" / "_parse_cache"

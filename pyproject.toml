@@ -1,26 +1,17 @@
 [project]
 name = "fastapi-app"
 version = "1.0.0"
-description = "RAG 产品：FastAPI 壳 + rag 核心（MinerU 解析 → FastEmbed → Qdrant → 混合检索 + rerank → DeepSeek 生成 + 引用校验）"
+description = "RAG 客服产品：server（FastAPI + RAG Core + LangGraph 编排）+ web（React 客服工作台）"
 readme = "README.md"
-# ⚠️ 锁定 Python 3.12（详见 README「为什么锁 3.12」）：rag 核心依赖 fastembed→onnxruntime，
+# ⚠️ 锁定 Python 3.12（详见 README「为什么锁 3.12」）：fastembed→onnxruntime
 #   在 macOS x86_64 + 3.13/3.14 下无预编译 wheel，故必须 3.10-3.12，本项目统一用 3.12。
 requires-python = ">=3.10,<3.13"
 dependencies = [
-    "fastapi[standard]>=0.141.1",
-    "uvicorn[standard]>=0.52.4",
-    # RAG 核心依赖（由 rag/requirements.txt 提供，此处汇总便于 uv 安装）
-    "qdrant-client>=1.9",
-    "fastembed>=0.3",
-    "openai>=1.40",
-    "python-dotenv>=1.0",
-    "requests>=2.31",
-    "mineru-open-sdk==0.2.5",
-    "markitdown>=0.0.1",
-    "python-multipart>=0.0.9",
+    # 后端依赖统一由 server/ 子项目声明（见 server/pyproject.toml）
+    "server",
 ]
 
 [tool.uv.workspace]
 members = [
-    "langgraph",
+    "server",
 ]

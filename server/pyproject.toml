@@ -1,0 +1,53 @@
+[project]
+name = "server"
+version = "1.0.0"
+description = "RAG 客服系统后端：FastAPI API + RAG Core（解析→切块→向量→混合检索→生成→引用校验）+ LangGraph 客服编排 + 会话/文档持久化"
+readme = "README.md"
+# 锁定 Python 3.12：fastembed→onnxruntime 在 macOS x86_64 + 3.13/3.14 无预编译 wheel
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    # Web 框架
+    "fastapi[standard]>=0.141.1",
+    "uvicorn[standard]>=0.52.4",
+    "python-multipart>=0.0.9",
+    # RAG 核心（云端走远程 embedding 时不需要 fastembed）
+    "qdrant-client>=1.9",
+    "openai>=1.40",
+    "python-dotenv>=1.0",
+    "requests>=2.31",
+    "mineru-open-sdk==0.2.5",
+    "markitdown>=0.0.1",
+    # 客服编排
+    "langgraph>=0.2.60",
+    "langchain-core>=0.3.0",
+    "pydantic>=2.7",
+    # 持久化
+    "pymysql>=1.2.0",
+]
+
+[project.optional-dependencies]
+# 本地向量化（bge 模型，首次自动下载 ~150MB）：仅本地开发需要；
+# 云端部署配 EMBED_BASE_URL 走远程 /embeddings，不装 fastembed 以缩小镜像。
+local = [
+    "fastembed>=0.3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+server-cli = "server.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/server"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["src"]

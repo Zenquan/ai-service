@@ -1,26 +1,23 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# 一键启动 RAG 产品：FastAPI 后端（:8000）+ Vite 前端（:5173）
+# 一键启动 RAG 客服产品：FastAPI 后端（:8000）+ Vite 前端（:5173）
 # 用法：./start.sh
 # 可通过环境变量覆盖端口：BACKEND_PORT=8010 FRONTEND_PORT=5174 ./start.sh
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SERVER_DIR="$ROOT_DIR/server"
 BACKEND_PORT="${BACKEND_PORT:-8000}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 
 echo "项目目录：$ROOT_DIR"
 
 # ── 后端 Python（必须 3.12，见 README「为什么锁 3.12」）──
-PYTHON_BIN="${PYTHON_BIN:-$ROOT_DIR/rag/.venv/bin/python3.12}"
-if [[ ! -x "$PYTHON_BIN" && -x "$ROOT_DIR/rag/.venv/bin/python" ]]; then
-  PYTHON_BIN="$ROOT_DIR/rag/.venv/bin/python"
-fi
-
+PYTHON_BIN="${PYTHON_BIN:-$SERVER_DIR/.venv/bin/python}"
 if [[ ! -x "$PYTHON_BIN" ]]; then
-  echo "❌ 未找到 rag/.venv 中的 Python 3.12。请先创建后端虚拟环境："
-  echo "   python3.12 -m venv rag/.venv"
-  echo "   rag/.venv/bin/pip install -r rag/requirements.txt"
+  echo "❌ 未找到 server/.venv 中的 Python 3.12。请先创建后端虚拟环境："
+  echo "   cd server && uv venv --python 3.12 .venv"
+  echo "   uv pip install --python .venv/bin/python -e '.[local]' --group dev"
   exit 1
 fi
 
@@ -30,9 +27,9 @@ if [[ "$PY_VERSION" != "3.12" ]]; then
 fi
 
 # ── 密钥配置 ──
-if [[ ! -f "$ROOT_DIR/rag/.env" ]]; then
-  echo "⚠️  未找到 rag/.env，将使用默认配置（DeepSeek API Key 可能缺失）。"
-  echo "   可复制示例：cp rag/.env.example rag/.env"
+if [[ ! -f "$SERVER_DIR/.env" ]]; then
+  echo "⚠️  未找到 server/.env，将使用默认配置（DeepSeek API Key 可能缺失）。"
+  echo "   可复制示例：cp server/.env.example server/.env"
 fi
 
 # ── 会话持久化（云端 MySQL 公网，本地与线上共享同一份会话数据）──
@@ -61,7 +58,7 @@ echo "📦 首次启动：安装前端依赖..."
 fi
 
 # ── FastEmbed 模型缓存目录（避免首次冷启动下载模型）──
-FASTEMBED_CACHE_PATH="$ROOT_DIR/rag/data/fastembed_cache"
+FASTEMBED_CACHE_PATH="$SERVER_DIR/data/fastembed_cache"
 mkdir -p "$FASTEMBED_CACHE_PATH"
 export FASTEMBED_CACHE_PATH
 
@@ -76,7 +73,8 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "🚀 启动后端：http://127.0.0.1:$BACKEND_PORT"
-(cd "$ROOT_DIR" && exec "$PYTHON_BIN" -m uvicorn app.main:app --reload --host 127.0.0.1 --port "$BACKEND_PORT") &
+# 必须从 server/ 目录启动：config.SERVER_ROOT 默认取 cwd（.env/data/qdrant_data 都在 server/）
+(cd "$SERVER_DIR" && exec "$PYTHON_BIN" -m uvicorn server.main:app --reload --host 127.0.0.1 --port "$BACKEND_PORT") &
 BACKEND_PID=$!
 
 echo "🎨 启动前端：http://localhost:$FRONTEND_PORT"
