@@ -1,10 +1,9 @@
 /** 知识库面板：模型状态 + 统计 + 上传 + 文档列表
  *
  * 布局（修复截图里的"内容被裁切"问题）：
- *  面板 = flex column 100% 高
- *    ├─ 头部（模型信息行）
- *    ├─ 上传区（固定，不滚动）
- *    ├─ 文档列表区（flex:1 min-height:0 → 内部独立滚动）
+ *  面板 = flex row 100% 高
+ *    ├─ 左侧：模型信息 / 统计 / Rerank / 上传（固定宽度，不滚动）
+ *    └─ 右侧：文档列表独立区块（flex:1 min-width:0 → 内部独立滚动）
  *
  * UI 细节：
  * - 统计卡片化（白底圆角），模型名胶囊展示不换行
@@ -99,96 +98,130 @@ export default function KnowledgePanel() {
       style={{
         height: '100%',
         display: 'flex',
-        flexDirection: 'column',
-        padding: '16px 16px 20px',
-        gap: 14,
+        flexDirection: 'row',
+        padding: '14px 16px 18px',
+        gap: 16,
         boxSizing: 'border-box',
       }}
     >
-      {/* ① 模型状态行 */}
-      <FlexRow>
-        <Typography.Text strong style={{ fontSize: 15 }}>
-          知识库
-        </Typography.Text>
-        <Tooltip title="刷新">
-          <Button
-            size="small"
-            type="text"
-            icon={<ReloadOutlined />}
-            loading={loadingDocs}
-            onClick={async () => {
-              setLoadingDocs(true)
-              await refresh()
-              setLoadingDocs(false)
-            }}
-          />
-        </Tooltip>
-      </FlexRow>
-
-      {health && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'nowrap', minWidth: 0 }}>
-          <Tooltip title="Embedding 模型">
-            <span
-              style={{
-                fontSize: 11,
-                color: '#1677ff',
-                background: 'rgba(22,119,255,0.08)',
-                padding: '2px 8px',
-                borderRadius: 999,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                maxWidth: 200,
-              }}
-            >
-              {health.embed_model}
-            </span>
-          </Tooltip>
-          <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.35)', whiteSpace: 'nowrap' }}>
-            {health.docs} 文档 · {health.chunks} chunks
-          </span>
-        </div>
-      )}
-
-      {/* ② 统计卡片（两枚并排） */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <StatCard label="文档数" value={health?.docs ?? '—'} />
-        <StatCard label="Chunk 数" value={health?.chunks ?? '—'} />
-      </div>
-
-      {/* Rerank 状态（语义化 Switch，只读展示） */}
+      {/* 左侧：模型状态 / 统计 / Rerank / 上传 */}
       <div
         style={{
+          width: 300,
+          flexShrink: 0,
+          minHeight: 0,
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '8px 12px',
-          background: 'rgba(0,0,0,0.02)',
-          borderRadius: 8,
+          flexDirection: 'column',
+          gap: 12,
         }}
       >
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 500 }}>Rerank 精排</div>
-          <div style={{ fontSize: 11, color: 'rgba(0,0,0,0.4)' }}>bge-reranker-v2-m3</div>
+        {/* ① 模型状态行 */}
+        <FlexRow>
+          <Typography.Text strong style={{ fontSize: 15 }}>
+            知识库
+          </Typography.Text>
+          <Tooltip title="刷新">
+            <Button
+              size="small"
+              type="text"
+              icon={<ReloadOutlined />}
+              loading={loadingDocs}
+              onClick={async () => {
+                setLoadingDocs(true)
+                await refresh()
+                setLoadingDocs(false)
+              }}
+            />
+          </Tooltip>
+        </FlexRow>
+
+        {health && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'nowrap', minWidth: 0 }}>
+            <Tooltip title="Embedding 模型">
+              <span
+                style={{
+                  fontSize: 11,
+                  color: '#1677ff',
+                  background: 'rgba(22,119,255,0.08)',
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  maxWidth: 180,
+                }}
+              >
+                {health.embed_model}
+              </span>
+            </Tooltip>
+            <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.35)', whiteSpace: 'nowrap' }}>
+              {health.docs} 文档 · {health.chunks} chunks
+            </span>
+          </div>
+        )}
+
+        {/* ② 统计卡片（两枚并排） */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <StatCard label="文档数" value={health?.docs ?? '—'} />
+          <StatCard label="Chunk 数" value={health?.chunks ?? '—'} />
         </div>
-        <Switch checked={Boolean(health?.rerank)} size="small" disabled />
+
+        {/* Rerank 状态（语义化 Switch，只读展示） */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '8px 12px',
+            background: 'rgba(0,0,0,0.02)',
+            borderRadius: 8,
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 500 }}>Rerank 精排</div>
+            <div style={{ fontSize: 11, color: 'rgba(0,0,0,0.4)' }}>bge-reranker-v2-m3</div>
+          </div>
+          <Switch checked={Boolean(health?.rerank)} size="small" disabled />
+        </div>
+
+        {/* ③ 上传区（固定不滚动） */}
+        <Dragger {...uploadProps} style={{ padding: '10px 8px', borderRadius: 10 }}>
+          <p className="ant-upload-drag-icon" style={{ marginBottom: 8 }}>
+            <CloudUploadOutlined style={{ fontSize: 30, color: '#1677ff' }} />
+          </p>
+          <p className="ant-upload-text" style={{ fontSize: 13, marginBottom: 4 }}>
+            {uploading ? '正在解析入库…' : '点击或拖拽文档到此处'}
+          </p>
+          <p className="ant-upload-hint" style={{ fontSize: 11.5 }}>
+            PDF / TXT / MD / DOCX，自动切片入库
+          </p>
+        </Dragger>
+
+        {!health && (
+          <Alert
+            type="error"
+            showIcon
+            message="后端不可用"
+            description="请先启动 FastAPI：rag/.venv/bin/python -m uvicorn app.main:app --port 8000"
+          />
+        )}
       </div>
 
-      {/* ③ 上传区（固定不滚动） */}
-      <Dragger {...uploadProps} style={{ padding: '12px 8px', borderRadius: 10 }}>
-        <p className="ant-upload-drag-icon" style={{ marginBottom: 8 }}>
-          <CloudUploadOutlined style={{ fontSize: 36, color: '#1677ff' }} />
-        </p>
-        <p className="ant-upload-text" style={{ fontSize: 13, marginBottom: 4 }}>
-          {uploading ? '正在解析入库…' : '点击或拖拽文档到此处'}
-        </p>
-        <p className="ant-upload-hint" style={{ fontSize: 11.5 }}>
-          PDF / TXT / MD / DOCX，自动切片入库
-        </p>
-      </Dragger>
-
       {/* ④ 文档列表（独立滚动，修复裁切） */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div
+        style={{
+          flex: 1,
+          minWidth: 0,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          background: '#f6f8fb',
+          border: '1px solid rgba(0,0,0,0.06)',
+          borderRadius: 12,
+          padding: '12px 12px 10px',
+          boxSizing: 'border-box',
+        }}
+      >
         <Typography.Text strong style={{ marginBottom: 8, fontSize: 13 }}>
           文档列表{docs.length > 0 ? `（${docs.length}）` : ''}
         </Typography.Text>
@@ -208,7 +241,8 @@ export default function KnowledgePanel() {
                   style={{
                     padding: '8px 8px',
                     borderRadius: 8,
-                    background: 'rgba(0,0,0,0.015)',
+                    background: '#fff',
+                    border: '1px solid rgba(0,0,0,0.04)',
                     marginBottom: 6,
                   }}
                   actions={[
@@ -243,7 +277,7 @@ export default function KnowledgePanel() {
                       <Tooltip title={item.doc}>
                         <Typography.Text
                           ellipsis={{ tooltip: null }}
-                          style={{ maxWidth: 190, fontSize: 13 }}
+                          style={{ maxWidth: 360, fontSize: 13 }}
                         >
                           {item.doc}
                         </Typography.Text>
@@ -259,15 +293,6 @@ export default function KnowledgePanel() {
           )}
         </div>
       </div>
-
-      {!health && (
-        <Alert
-          type="error"
-          showIcon
-          message="后端不可用"
-          description="请先启动 FastAPI：rag/.venv/bin/python -m uvicorn app.main:app --port 8000"
-        />
-      )}
     </div>
   )
 }
