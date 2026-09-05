@@ -613,7 +613,7 @@ textarea:focus-visible {
   background: #eff5ff;
 }
 
-.chat-title-group .ant-typography-title {
+.chat-title-group .ant-typography {
   margin: 0 !important;
   color: var(--navy);
   font-size: 16px;
