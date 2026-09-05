@@ -64,14 +64,39 @@ def ask(
     top_k: int | None = None,
     rerank_threshold: float | None = None,
 ) -> dict:
-    """问答（检索+生成+引用校验）。"""
+    """问答（检索+生成+引用校验）。
+
+    知识库为空（集合不存在 / 无文档）时返回友好回答而不是报错——
+    前端展示为普通回答气泡，用户知道是「还没上传文档」，而不是「系统坏了」。
+    """
     with rag_lock:
-        return rag_main.ask(
+        result = rag_main.ask(
             query,
             use_rerank=use_rerank,
             top_k=top_k,
             rerank_threshold=rerank_threshold,
         )
+        error = result.get("error")
+        if error and _is_empty_kb_error(error):
+            result["error"] = None
+            result["answer"] = _EMPTY_KB_ANSWER
+        return result
+
+
+# 空库/集合不存在的识别特征（Qdrant local 与远端 server 的报错文案都含 "not found"）
+_EMPTY_KB_ERROR_MARKERS = ("not found", "Collection")
+
+
+def _is_empty_kb_error(error: str) -> bool:
+    lowered = error.lower()
+    return any(marker.lower() in lowered for marker in _EMPTY_KB_ERROR_MARKERS)
+
+
+_EMPTY_KB_ANSWER = (
+    "知识库还没有文档，我暂时无法回答这个问题。"
+    "请先在「知识库管理」里上传文档（支持 PDF、Word、Markdown、图片等），"
+    "上传完成后我就能基于文档内容回答并附上来源引用。"
+)
 
 
 def docs_list() -> list[dict]:
