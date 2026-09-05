@@ -1061,8 +1061,8 @@ textarea:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 48px;
-  padding-inline: 6px;
+  width: fit-content;
+  padding: 0 5px;
   line-height: 18px;
   font-size: 10px;
   font-weight: 500;
