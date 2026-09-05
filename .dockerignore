@@ -1,9 +1,23 @@
-# 上传/构建上下文排除（云端构建时大幅减少上传体积）
+# 构建上下文排除（CloudBase GitHub 源码构建时减少上下文体积）
+# Git / 本地工具目录
 .git
 .gitignore
 .agent
+.learnings
+.reasonix
+.workbuddy
+.ragapp-deploy-context
+
+# 文档与测试不参与镜像（server/README.md 仍需保留给 pip 构建，故不排除 *.md）
 docs
-*.md
+server/tests
+**/tests
+
+# 本地开发环境变量（数据库密码等），不入构建上下文；
+# server/.env 保留给镜像（Dockerfile 中 COPY server/.env）
+.env.local
+
+# Python 缓存与运行数据
 __pycache__
 **/__pycache__
 *.pyc
@@ -12,14 +26,18 @@ __pycache__
 .venv
 **/.venv
 server/.venv
-server/tests
-server/*_cache
 server/data/fastembed_cache
 server/data/_parse_cache
 server/data/uploads
+server/data/docs/**/*.pdf
+server/data/docs/*.pdf
 server/qdrant_data
 **/fastembed_cache
+
+# 前端本地依赖与预构建产物（web/dist 由 Docker 阶段 1 生成）
 web/node_modules
-web/dist/assets/*.map
-.ragapp-deploy-context
-.env.local
+**/node_modules
+web/dist
+
+# 杂项
+*.log

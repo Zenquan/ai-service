@@ -16,7 +16,7 @@
 | 🧭 客服编排 | LangGraph 图：意图分类 → 知识问答 / 澄清 / 转人工；多轮历史上下文 | 后端 graph 层 |
 | 💾 云端持久化 | 会话/消息落 MySQL（回退内存显性标注 `storage`）；文档切块存 MySQL，部署后自动重建向量索引 | 后端 services 层 |
 | 🛡️ 健壮性 | MinerU→markitdown→纯文本三级解析降级、云解析 sha256 缓存、LLM 超时重试、rerank 失败静默回退、空库友好回答 | 后端 core 层 |
-| 🔒 安全 | 上传防路径穿越（只取 basename）、扩展名白名单、密钥只存 `server/.env`（gitignore 双保险） | 后端 ingest 路由 |
+| 🔒 安全 | 上传防路径穿越（只取 basename）、扩展名白名单、密钥只存本地 `server/.env` / 云端环境变量（均不入库） | 后端 ingest 路由 |
 
 ## 🏗️ 系统架构
 
@@ -108,9 +108,8 @@ fastapi-app/
 │   ├── src/lib/                 # api.ts 客户端 + chat-provider.ts（DefaultChatProvider 透传）
 │   ├── src/components/          # 会话侧栏 / ChatPanel / 上下文 / KnowledgePanel
 │   └── vite.config.ts           # dev proxy /api → 127.0.0.1:8000
-├── scripts/sync-deploy-context.sh  # 部署快照同步（CloudBase 云托管 deploy 前执行）
 ├── scripts/start.sh                # 一键启动前后端
-├── Dockerfile                   # 单容器部署镜像（pip install ./server，不装 fastembed）
+├── Dockerfile                      # 单容器部署镜像（镜像内构建前端，密钥由环境变量注入）
 └── docs/                        # 架构与 API 文档
     ├── architecture.md          # 分层 / 数据流 / 关键设计决策
     ├── customer-service-plan.md # 客服系统演进规划（Phase 路线）
@@ -166,7 +165,7 @@ cd fastapi-app/server
 # 前端
 cd fastapi-app/web && pnpm lint && pnpm build
 
-# 部署（CloudBase 云托管）
-cd fastapi-app && bash scripts/sync-deploy-context.sh # 同步快照（每次部署前）
-# 然后 manageCloudRun deploy，targetPath=.ragapp-deploy-context
+# 部署（CloudBase 云托管 · Git 仓库自动触发）
+# 控制台：绑定 GitHub 仓库 → 服务选择 master 分支并开启自动部署 → Dockerfile 选仓库根目录 Dockerfile
+# 密钥与数据库连接（DEEPSEEK_API_KEY / MYSQL_* / EMBED_* 等）在云托管环境变量中配置，不写入镜像
 ```
