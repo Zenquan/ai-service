@@ -292,16 +292,17 @@ textarea:focus-visible {
   box-shadow: 0 7px 14px rgba(37, 99, 235, 0.18);
   font-size: 14px;
   font-weight: 600;
-  transition: transform 150ms var(--ease-standard), box-shadow 150ms var(--ease-standard);
+  transition: box-shadow 150ms var(--ease-standard), background 150ms var(--ease-standard);
 }
 
 .new-conversation:hover {
-  transform: translateY(-1px);
   box-shadow: 0 10px 20px rgba(37, 99, 235, 0.24);
+  background: #1d4ed8;
 }
 
 .new-conversation:active {
-  transform: scale(0.98);
+  background: #1e40af;
+  box-shadow: 0 4px 8px rgba(37, 99, 235, 0.18);
 }
 
 .status-card-icon,
