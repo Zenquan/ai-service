@@ -26,13 +26,15 @@ class CustomerServiceAgent:
         conversation_id: str = "anonymous",
         user_id: str | None = None,
         tenant_id: str | None = None,
+        history: list[dict] | None = None,
     ) -> dict:
+        messages = list(history or []) + [{"role": "user", "content": query}]
         return self.graph.invoke({
             "conversation_id": conversation_id,
             "user_id": user_id,
             "tenant_id": tenant_id,
             "current_query": query,
-            "messages": [{"role": "user", "content": query}],
+            "messages": messages,
         })
 
     async def aask(
@@ -41,13 +43,15 @@ class CustomerServiceAgent:
         conversation_id: str = "anonymous",
         user_id: str | None = None,
         tenant_id: str | None = None,
+        history: list[dict] | None = None,
     ) -> dict:
+        messages = list(history or []) + [{"role": "user", "content": query}]
         return await self.graph.ainvoke({
             "conversation_id": conversation_id,
             "user_id": user_id,
             "tenant_id": tenant_id,
             "current_query": query,
-            "messages": [{"role": "user", "content": query}],
+            "messages": messages,
         })
 
 
