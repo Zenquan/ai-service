@@ -42,13 +42,17 @@ export default function KnowledgePanel() {
   const [docs, setDocs] = useState<DocItem[]>([])
   const [uploading, setUploading] = useState(false)
   const [loadingDocs, setLoadingDocs] = useState(false)
+  // 健康状态：loading=请求中（不显示错误）；ok=已加载；error=请求失败（显示错误）
+  const [healthStatus, setHealthStatus] = useState<'loading' | 'ok' | 'error'>('loading')
 
   const refresh = useCallback(async () => {
     try {
       const [h, d] = await Promise.all([api.health(), api.docs()])
       setHealth(h)
       setDocs(d)
+      setHealthStatus('ok')
     } catch (e) {
+      setHealthStatus('error')
       message.error(`读取知识库失败：${(e as Error).message}`)
     }
   }, [message])
@@ -197,7 +201,7 @@ export default function KnowledgePanel() {
           </p>
         </Dragger>
 
-        {!health && (
+        {healthStatus === 'error' && (
           <Alert
             type="error"
             showIcon
