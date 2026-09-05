@@ -35,6 +35,20 @@ if [[ ! -f "$ROOT_DIR/rag/.env" ]]; then
   echo "   可复制示例：cp rag/.env.example rag/.env"
 fi
 
+# ── 会话持久化（云端 MySQL 公网，本地与线上共享同一份会话数据）──
+# 连接信息从仓库根目录 .env.local 读取（已被 .gitignore 忽略，不进版本控制）。
+# 首次使用请创建 .env.local，内容见 .env.local.example；未配置时会话回退内存存储（重启即丢）。
+if [[ -f "$ROOT_DIR/.env.local" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT_DIR/.env.local"
+  set +a
+fi
+if [[ -z "${MYSQL_HOST:-}" ]]; then
+  echo "⚠️  未配置 .env.local（MYSQL_HOST），会话将使用内存存储（重启即丢）。"
+  echo "   如需与线上共享会话数据：cp .env.local.example .env.local 并填写 MySQL 连接信息。"
+fi
+
 # ── 前端依赖（pnpm + node_modules）──
 if ! command -v pnpm >/dev/null 2>&1; then
   echo "❌ 未找到 pnpm，请先安装：npm install -g pnpm"
