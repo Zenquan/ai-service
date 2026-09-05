@@ -17,9 +17,9 @@ dependencies = [
     "requests>=2.31",
     "mineru-open-sdk==0.2.5",
     "markitdown>=0.0.1",
-    # 客服编排
-    "langgraph>=0.2.60",
-    "langchain-core>=0.3.0",
+    # 客服编排（锁定 0.2.x：代码 API 基于 0.2 系列，1.x 有 breaking changes）
+    "langgraph>=0.2.60,<1.0",
+    "langchain-core>=0.3.0,<0.4.0",
     "pydantic>=2.7",
     # 持久化
     "pymysql>=1.2.0",
