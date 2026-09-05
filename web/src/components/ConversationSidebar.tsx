@@ -6,7 +6,6 @@ import {
   Divider,
   Input,
   Tag,
-  Tooltip,
   Typography,
 } from 'antd'
 import {
@@ -16,7 +15,6 @@ import {
   InboxOutlined,
   PlusOutlined,
   SearchOutlined,
-  SettingOutlined,
   TeamOutlined,
 } from '@ant-design/icons'
 import type { ConversationSummary } from '../lib/api'
@@ -100,16 +98,6 @@ export default function ConversationSidebar({
 
   return (
     <div className="conversation-sidebar">
-      <div className="sidebar-heading">
-        <div>
-          <Typography.Text className="eyebrow">SERVICE DESK</Typography.Text>
-          <Typography.Title level={4}>工作台</Typography.Title>
-        </div>
-        <Tooltip title="客服设置">
-          <Button type="text" shape="circle" icon={<SettingOutlined />} />
-        </Tooltip>
-      </div>
-
       <Button className="new-conversation" type="primary" block icon={<PlusOutlined />} onClick={onNewConversation}>
         新建会话
       </Button>
