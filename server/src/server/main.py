@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
 from server.api import ask, customer_service, docs, health, ingest
+from server.core import config as rag_config
 from server.services import rag
 
 logger = logging.getLogger(__name__)
@@ -67,13 +68,14 @@ app.include_router(ask.router, prefix=API_PREFIX, tags=["ask"])
 app.include_router(customer_service.router, prefix=API_PREFIX, tags=["customer-service"])
 
 
-@app.get("/", tags=["root"])
+@app.get("/api-info", tags=["root"])
 async def root() -> dict:
+    """API 基本信息（挂在 /api-info，/ 留给静态前端 SPA）。"""
     return {"name": "RAG 产品", "docs": "/docs", "api": API_PREFIX}
 
 
 # 静态前端（单容器部署模式）：web/dist 存在时挂载 SPA，/ 返回 index.html。
-# 仓库根：server/../web/dist；本地开发（Vite dev proxy）时 dist 缺失则跳过。
-_WEB_DIST = Path(__file__).resolve().parents[2] / "web" / "dist"
+# 路径推导：SERVER_ROOT（cwd）= server/ 或容器 /app/server，web/dist 在其上一级仓库根的 web/dist。
+_WEB_DIST = rag_config.SERVER_ROOT.parent / "web" / "dist"
 if _WEB_DIST.is_dir():
     app.mount("/", StaticFiles(directory=_WEB_DIST, html=True), name="web")
