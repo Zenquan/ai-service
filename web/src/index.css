@@ -334,12 +334,16 @@ textarea:focus-visible {
 
 .sidebar-tabs button {
   position: relative;
-  padding: 5px 0;
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0;
   border: 0;
   color: #99a5b7;
   background: transparent;
   cursor: pointer;
   font-size: 11px;
+  line-height: 1;
   transition: color 150ms ease;
 }
 
@@ -351,7 +355,7 @@ textarea:focus-visible {
 
 .sidebar-tabs button.is-active {
   color: var(--blue);
-  font-weight: 600;
+  /* 不改 font-weight：字重变化会让按钮宽度/高度跳动 */
 }
 
 .sidebar-tabs button.is-active::after {
