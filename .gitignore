@@ -25,3 +25,5 @@ rag/data/fastembed_cache/
 .reasonix/
 
 .workbuddy/
+
+.ragapp-deploy-context/
