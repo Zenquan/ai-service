@@ -14,6 +14,11 @@ class MessageRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000, description="客户消息")
 
 
+@router.get("/conversations")
+async def list_conversations(limit: int = 50) -> list[dict]:
+    return customer_service.list_conversations(limit)
+
+
 @router.get("/conversations/{conversation_id}")
 async def get_conversation(conversation_id: str) -> dict:
     return customer_service.get_conversation(conversation_id)

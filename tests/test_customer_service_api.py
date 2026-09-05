@@ -11,9 +11,14 @@ from app.services.customer_service import customer_service
 
 @pytest.fixture(autouse=True)
 def clear_conversations():
-    customer_service._conversations.clear()
+    for store in (customer_service._store, customer_service._fallback_store):
+        store.clear()
+    # API 层测试直接打桩 rag.ask，不走真实 LangGraph 图（图会连 Qdrant/模型，拖慢且不可控）
+    customer_service._graph_checked = True
+    customer_service._graph_agent = None
     yield
-    customer_service._conversations.clear()
+    for store in (customer_service._store, customer_service._fallback_store):
+        store.clear()
 
 
 @pytest.fixture()
@@ -41,6 +46,7 @@ def test_message_creates_session_and_persists_history(client, monkeypatch):
     assert body["conversation_id"] == "c-1"
     assert body["response_mode"] == "answer"
     assert body["citation_valid"] is True
+    assert body["storage"] in {"memory", "memory_fallback", "mysql"}
     assert client.get("/api/v1/conversations/c-1").json()["message_count"] == 2
     assert len(client.get("/api/v1/conversations/c-1/messages").json()) == 2
 
