@@ -1,4 +1,4 @@
-import { Button, Card, Progress, Tag, Tooltip, Typography } from 'antd'
+import { Card, Progress, Tag, Tooltip, Typography } from 'antd'
 import {
   CheckCircleFilled,
   ClockCircleOutlined,
@@ -6,13 +6,11 @@ import {
   SafetyCertificateOutlined,
   TeamOutlined,
   ThunderboltFilled,
-  RightOutlined,
 } from '@ant-design/icons'
 import type { Material } from '../lib/api'
 
 export default function ContextPanel({
   materials,
-  onOpenKnowledge,
   conversationId,
   responseMode = 'answer',
   needsHuman = false,
@@ -20,7 +18,6 @@ export default function ContextPanel({
   handoffReason,
 }: {
   materials: Material[]
-  onOpenKnowledge: () => void
   conversationId?: string
   responseMode?: 'answer' | 'clarify' | 'handoff'
   needsHuman?: boolean
@@ -90,15 +87,13 @@ export default function ContextPanel({
         )}
       </div>
 
-      <Card className="handoff-card" bordered={false}>
-        <div className="handoff-icon"><TeamOutlined /></div>
-        <div className="handoff-copy"><Typography.Text strong>{routeLabel}</Typography.Text><Typography.Text type="secondary">{isHandoff ? handoffReason ?? '当前问题已进入人工处理队列' : needsClarification ? '请补充关键信息后继续处理' : '低置信度、投诉或业务工具失败时自动转接'}</Typography.Text></div>
-        <Tag bordered={false} color={routeColor}>{isHandoff ? '已触发' : needsClarification ? '待补充' : '已准备'}</Tag>
-      </Card>
-
-      <Button className="manage-knowledge" block icon={<FileSearchOutlined />} onClick={onOpenKnowledge}>
-        管理知识库 <RightOutlined />
-      </Button>
+      {!isHandoff && !needsClarification ? null : (
+        <Card className="handoff-card" bordered={false}>
+          <div className="handoff-icon"><TeamOutlined /></div>
+          <div className="handoff-copy"><Typography.Text strong>{routeLabel}</Typography.Text><Typography.Text type="secondary">{isHandoff ? handoffReason ?? '当前问题已进入人工处理队列' : '请补充关键信息后继续处理'}</Typography.Text></div>
+          <Tag bordered={false} color={routeColor}>{isHandoff ? '已触发' : '待补充'}</Tag>
+        </Card>
+      )}
     </div>
   )
 }

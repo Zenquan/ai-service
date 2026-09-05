@@ -109,7 +109,7 @@ export default function App() {
               />
             </main>
             <aside className="support-context">
-              <ContextPanel materials={materials} onOpenKnowledge={() => setKnowledgeOpen(true)} {...conversationState} />
+              <ContextPanel materials={materials} {...conversationState} />
             </aside>
           </div>
         </div>
