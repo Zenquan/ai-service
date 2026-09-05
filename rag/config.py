@@ -64,7 +64,7 @@ SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY", "")
 RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
 RERANK_URL = "https://api.siliconflow.cn/v1/rerank"
 RERANK_DEFAULT = True   # ask/retrieve 默认走 rerank；无 key 时自动跳过不报错
-RERANK_SCORE_THRESHOLD = float(os.getenv("RERANK_SCORE_THRESHOLD", "0"))
+RERANK_SCORE_THRESHOLD = float(os.getenv("RERANK_SCORE_THRESHOLD", "0.3"))
 
 # MinerU v2 SDK：空 token = Flash 免费模式；填 token = 标准模式（https://mineru.net 免费申请）
 MINERU_TOKEN = os.getenv("MINERU_TOKEN", "")
