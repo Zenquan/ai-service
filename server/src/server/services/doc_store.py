@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -57,19 +58,33 @@ class DocStore:
 
         return pymysql.connect(**self._config)
 
-    def save_doc(self, doc_name: str, chunks: list[dict]) -> None:
-        """保存/覆盖一份文档的切块（upsert）。"""
+    def save_doc(self, doc_name: str, chunks: list[dict], raw_bytes: bytes | None = None) -> None:
+        """保存/覆盖一份文档的切块 + 原始文件字节（upsert）。
+
+        raw_bytes 为 None 时只更新切块（原始文件已在库中时不重复写）。
+        """
         import pymysql
 
         try:
             with self._connect() as conn:
                 with conn.cursor() as cursor:
-                    cursor.execute(
-                        "INSERT INTO rag_documents (doc_name, chunks, updated_at) "
-                        "VALUES (%s, %s, %s) "
-                        "ON DUPLICATE KEY UPDATE chunks = VALUES(chunks), updated_at = VALUES(updated_at)",
-                        (doc_name, json.dumps(chunks, ensure_ascii=False), _utcnow()),
-                    )
+                    if raw_bytes is not None:
+                        raw_sha256 = hashlib.sha256(raw_bytes).hexdigest()
+                        cursor.execute(
+                            "INSERT INTO rag_documents (doc_name, chunks, raw_file, raw_sha256, updated_at) "
+                            "VALUES (%s, %s, %s, %s, %s) "
+                            "ON DUPLICATE KEY UPDATE chunks = VALUES(chunks), "
+                            "raw_file = VALUES(raw_file), raw_sha256 = VALUES(raw_sha256), "
+                            "updated_at = VALUES(updated_at)",
+                            (doc_name, json.dumps(chunks, ensure_ascii=False), raw_bytes, raw_sha256, _utcnow()),
+                        )
+                    else:
+                        cursor.execute(
+                            "INSERT INTO rag_documents (doc_name, chunks, updated_at) "
+                            "VALUES (%s, %s, %s) "
+                            "ON DUPLICATE KEY UPDATE chunks = VALUES(chunks), updated_at = VALUES(updated_at)",
+                            (doc_name, json.dumps(chunks, ensure_ascii=False), _utcnow()),
+                        )
         except pymysql.MySQLError as exc:
             raise DocStoreUnavailable(f"MySQL 保存文档切块失败: {exc}") from exc
 
