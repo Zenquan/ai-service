@@ -18,9 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY deploy/requirements.txt ./deploy/requirements.txt
 RUN pip install --no-cache-dir -r deploy/requirements.txt
 
-# 应用代码 + 密钥配置 + 前端产物
+# 应用代码 + LangGraph 编排层 + 密钥配置 + 前端产物
 COPY app ./app
 COPY rag ./rag
+COPY langgraph ./langgraph
 COPY web/dist ./web/dist
 COPY rag/.env ./rag/.env
 

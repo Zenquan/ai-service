@@ -12,3 +12,9 @@ python-dotenv>=1.0
 requests>=2.31
 mineru-open-sdk==0.2.5
 markitdown==0.1.7
+
+# 客服会话持久化：MySQL 驱动（短连接，云端经 VPC 内网直连）
+pymysql==1.2.0
+
+# LangGraph 编排层（客服流程图，0.2.x 与代码 API 匹配）
+langgraph==0.2.76
