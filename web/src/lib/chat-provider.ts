@@ -85,9 +85,19 @@ export function createCustomerServiceProvider(conversationId: string) {
     if (!chunk) {
       return { ...base }
     }
-    // SSE 流式 chunk：{event: 'token'|'materials'|'done'|'meta'|'error', data: {...}}
+    // SSE 流式 chunk：{event: 'token'|'materials'|'done'|'meta'|'error', data: <JSON字符串>}
     const event = (chunk as { event?: string }).event
-    const data = ((chunk as { data?: Record<string, unknown> }).data ?? chunk) as Record<string, unknown>
+    const rawData = (chunk as { data?: unknown }).data
+    let data: Record<string, unknown> = {}
+    if (typeof rawData === 'string') {
+      try {
+        data = JSON.parse(rawData) as Record<string, unknown>
+      } catch {
+        data = {}
+      }
+    } else if (rawData && typeof rawData === 'object') {
+      data = rawData as Record<string, unknown>
+    }
     switch (event) {
       case 'materials':
         return { ...base, materials: (data.materials as Material[]) ?? [], text: base.text ?? '' }
