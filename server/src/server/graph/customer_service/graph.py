@@ -24,6 +24,10 @@ from server.graph.customer_service.state import CustomerServiceState
 
 def _after_intent(state: CustomerServiceState) -> str:
     intent = state.get("intent")
+    # 低置信度自适应追问：分类器（LLM）给出澄清文案时，优先追问而非硬路由，
+    # 避免把含糊请求误判成知识问答/订单查询导致错误分支。
+    if state.get("clarify_reason") and state.get("clarify_answer"):
+        return "clarify"
     if intent == "knowledge_question":
         return "retrieve"
     if intent == "greeting":

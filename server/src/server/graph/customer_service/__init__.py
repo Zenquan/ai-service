@@ -3,12 +3,18 @@ from __future__ import annotations
 
 from server.graph.customer_service.agent import CustomerServiceAgent, create_customer_service_agent
 from server.graph.customer_service.graph import build_customer_service_graph
+from server.graph.customer_service.llm_classifier import (
+    LLMIntentClassifier,
+    build_llm_classifier,
+)
 from server.graph.customer_service.state import CustomerServiceState, Intent
 
 __all__ = [
     "CustomerServiceAgent",
     "CustomerServiceState",
     "Intent",
+    "LLMIntentClassifier",
     "build_customer_service_graph",
+    "build_llm_classifier",
     "create_customer_service_agent",
 ]
