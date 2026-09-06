@@ -6,11 +6,15 @@
 """
 from __future__ import annotations
 
+import logging
+
 from openai import OpenAI
 
 from .citations import verify_citations
 
 from . import config
+
+logger = logging.getLogger(__name__)
 
 _SYSTEM = (
     "你是一个严格依据提供资料回答的助手。\n"
@@ -48,6 +52,9 @@ def generate(query: str, materials: list[dict], model: str | None = None) -> dic
     if not config.LLM_API_KEY:
         raise RuntimeError("缺少 DEEPSEEK_API_KEY（在 .env 里配置）")
 
+    logger.info(
+        "LLM 生成开始 model=%s materials=%d", model or config.LLM_MODEL, len(materials)
+    )
     client = _build_client()
     resp = client.chat.completions.create(
         model=model or config.LLM_MODEL,
@@ -60,6 +67,12 @@ def generate(query: str, materials: list[dict], model: str | None = None) -> dic
     answer = resp.choices[0].message.content or ""
 
     check = verify_citations(answer, len(materials))
+    logger.info(
+        "LLM 生成完成 answer_len=%d citations=%s valid=%s",
+        len(answer),
+        check["citations"],
+        check["valid"],
+    )
     return {
         "answer": answer,
         "citations": check["citations"],
@@ -82,6 +95,9 @@ def generate_stream(query: str, materials: list[dict], model: str | None = None)
     if not config.LLM_API_KEY:
         raise RuntimeError("缺少 DEEPSEEK_API_KEY（在 .env 里配置）")
 
+    logger.info(
+        "LLM 流式生成开始 model=%s materials=%d", model or config.LLM_MODEL, len(materials)
+    )
     client = _build_client()
     response = client.chat.completions.create(
         model=model or config.LLM_MODEL,
@@ -102,6 +118,12 @@ def generate_stream(query: str, materials: list[dict], model: str | None = None)
 
     answer = "".join(parts)
     check = verify_citations(answer, len(materials))
+    logger.info(
+        "LLM 流式生成完成 answer_len=%d citations=%s valid=%s",
+        len(answer),
+        check["citations"],
+        check["valid"],
+    )
     yield {
         "answer": answer,
         "citations": check["citations"],

@@ -16,7 +16,12 @@ from starlette.concurrency import run_in_threadpool
 
 from server.api import ask, customer_service, docs, health, ingest
 from server.core import config as rag_config
+from server.observability import TraceIdMiddleware, setup_logging
 from server.services import rag
+
+# 模块导入即配置日志（本地/测试/CLI 兜底）；lifespan 里再调用一次，
+# 覆盖 uvicorn 启动时对 logging 的默认重置。
+setup_logging()
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +29,9 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """启动时重建 RAG 云存储：部署后 Qdrant 本地集合为空且 MySQL 有文档切块时重建向量索引。"""
+    # uvicorn 在 lifespan 前已配置过默认 logging，这里用我们的 dictConfig 覆盖，
+    # 保证 INFO 可见、trace_id 格式统一。
+    setup_logging()
     try:
         result = await run_in_threadpool(rag.restore_from_cloud)
         if result["restored_docs"]:
@@ -44,6 +52,8 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+app.add_middleware(TraceIdMiddleware)
 
 # 前端 dev server（Vite）跨域
 app.add_middleware(

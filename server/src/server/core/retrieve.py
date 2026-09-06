@@ -1,6 +1,7 @@
 """混合检索：向量召回 + BM25 关键词召回 + RRF 融合 + 可选 rerank。"""
 from __future__ import annotations
 
+import logging
 import re
 from collections import Counter
 from functools import lru_cache
@@ -8,6 +9,8 @@ from math import log
 
 from . import config
 from .embed_store import embed_texts, get_client
+
+logger = logging.getLogger(__name__)
 
 
 def retrieve(
@@ -42,7 +45,16 @@ def retrieve(
             pass
 
     result_limit = config.RERANK_TOP_K if rerank_applied else top_k
-    return results[:result_limit]
+    final = results[:result_limit]
+    logger.info(
+        "混合检索完成 query_len=%d vector=%d keyword=%d rerank=%s final=%d",
+        len(query),
+        len(vector_results),
+        len(keyword_results),
+        rerank_applied,
+        len(final),
+    )
+    return final
 
 
 def _vector_retrieve(query: str, limit: int) -> list[dict]:
