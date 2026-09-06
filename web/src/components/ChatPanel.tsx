@@ -13,9 +13,26 @@ import { api } from '../lib/api'
 import type { Material } from '../lib/api'
 
 const SUGGESTIONS = [
-  { label: '什么是 AI Agent？', description: '概念入门' },
-  { label: 'AI Agent 的核心能力有哪些？', description: '能力拆解' },
-  { label: 'DeepFace 论文提出了什么？', description: '论文问答' },
+  {
+    layer: '① 知识问答',
+    label: '什么是 AI Agent？',
+    description: '自动检索资料 → 引用回答',
+  },
+  {
+    layer: '② 订单工具',
+    label: '我的订单 A00001 到哪了？',
+    description: '归属校验 → 只读返回物流',
+  },
+  {
+    layer: '② 缺单号时',
+    label: '我的订单到哪了？',
+    description: '先澄清索要订单号，再继续查',
+  },
+  {
+    layer: '③ 售后/人工',
+    label: '我要投诉，转人工',
+    description: '高风险请求 → 人工接管',
+  },
 ]
 
 const roles: BubbleListProps['role'] = {
@@ -154,11 +171,16 @@ export default function ChatPanel({
         <div className="chat-empty-state">
           <div className="empty-orbit"><div className="empty-orbit-inner"><RobotOutlined /></div><span className="orbit-dot orbit-dot-one" /><span className="orbit-dot orbit-dot-two" /></div>
           <Typography.Title level={2}>今天想为客户解决什么？</Typography.Title>
-          <Typography.Paragraph>我会先理解问题，再从知识库召回依据；涉及订单、售后或投诉时，会明确交给人工处理。</Typography.Paragraph>
+          <Typography.Paragraph>我会先理解问题，再从知识库召回依据；订单/物流会调用只读工具核实归属后回答，售后与投诉会明确转人工处理。</Typography.Paragraph>
           <div className="suggestion-grid">
             {SUGGESTIONS.map((suggestion) => (
               <Button key={suggestion.label} className="suggestion-card" onClick={() => handleSend(suggestion.label)}>
-                <span><strong>{suggestion.label}</strong><small>{suggestion.description}</small></span><span className="suggestion-arrow">↗</span>
+                <span>
+                  <em className="suggestion-layer">{suggestion.layer}</em>
+                  <strong>{suggestion.label}</strong>
+                  <small>{suggestion.description}</small>
+                </span>
+                <span className="suggestion-arrow">↗</span>
               </Button>
             ))}
           </div>

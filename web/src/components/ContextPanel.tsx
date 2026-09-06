@@ -65,8 +65,8 @@ export default function ContextPanel({
         </div>
         <div className="route-line"><CheckCircleFilled /> <span className="route-label">意图识别</span><span className="route-badge">已启用</span></div>
         <div className="route-line"><CheckCircleFilled /> <span className="route-label">混合检索 + RRF</span><span className="route-badge">已启用</span></div>
-        <div className={`route-line ${isHandoff ? 'route-active' : 'muted'}`}><ClockCircleOutlined /> <span className="route-label">订单 / 售后工具</span><span className={`route-badge ${isHandoff ? 'route-badge-warn' : 'route-badge-muted'}`}>{isHandoff ? '需人工' : '待接入'}</span></div>
-        <Progress className="route-progress" percent={isHandoff ? 100 : 66} showInfo={false} strokeColor={isHandoff ? '#e59b2e' : '#2563eb'} trailColor="#e8edf5" size="small" />
+        <div className={`route-line ${isHandoff ? 'route-active' : ''}`}><ClockCircleOutlined /> <span className="route-label">订单查询工具</span><span className={`route-badge ${isHandoff ? 'route-badge-warn' : ''}`}>{isHandoff ? '需人工' : '只读已接入'}</span></div>
+        <Progress className="route-progress" percent={isHandoff ? 100 : 75} showInfo={false} strokeColor={isHandoff ? '#e59b2e' : '#2563eb'} trailColor="#e8edf5" size="small" />
       </Card>
 
       <div className="context-section-title">

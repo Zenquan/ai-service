@@ -2,7 +2,7 @@
 
 import { DefaultChatProvider, XRequest } from '@ant-design/x-sdk'
 import type { SSEOutput } from '@ant-design/x-sdk'
-import type { Material } from './api'
+import type { Material, ToolResultRecord } from './api'
 
 /** 一条聊天消息：用户问题 or AI 回答（含引用素材） */
 export interface ChatMessage {
@@ -21,6 +21,8 @@ export interface ChatMessage {
   needsHuman?: boolean
   needsClarification?: boolean
   handoffReason?: string | null
+  /** 图内工具执行结果（只读订单等） */
+  toolResults?: ToolResultRecord[]
 }
 
 /** 请求入参：问题文本 */
@@ -114,7 +116,7 @@ export function createCustomerServiceProvider(conversationId: string) {
           citationValid: !!data.citation_valid,
         }
       case 'meta':
-        // 转人工/澄清：完整回答一次到位
+        // 图结果（工具回答 / 澄清 / 转人工）：完整回答一次到位
         return {
           role: 'assistant',
           text: (data.answer as string) ?? '',
@@ -125,6 +127,13 @@ export function createCustomerServiceProvider(conversationId: string) {
           needsHuman: !!data.needs_human,
           needsClarification: !!data.needs_clarification,
           handoffReason: (data.handoff_reason as string) ?? null,
+          toolResults: (data.tool_results as ToolResultRecord[]) ?? [],
+        }
+      case 'progress':
+        // 图内工具执行中的可见状态（如“正在查询订单与物流…”）
+        return {
+          ...base,
+          text: (data.label as string) ?? base.text,
         }
       case 'error':
         return { ...base, error: (data.error as string) ?? '未知错误' }

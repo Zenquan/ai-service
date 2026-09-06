@@ -769,8 +769,8 @@ textarea:focus-visible {
 
 .suggestion-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(150px, 1fr));
-  width: min(100%, 650px);
+  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+  width: min(100%, 760px);
   gap: 10px;
 }
 
@@ -799,13 +799,24 @@ textarea:focus-visible {
 }
 
 .suggestion-card strong,
-.suggestion-card small {
+.suggestion-card small,
+.suggestion-layer {
   display: block;
+}
+
+.suggestion-layer {
+  margin-bottom: 7px;
+  color: #2563eb;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .suggestion-card strong {
   color: #52627c;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1.55;
 }

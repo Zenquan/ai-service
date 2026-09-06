@@ -152,7 +152,7 @@ export default function ConversationSidebar({
         <div className="status-card-icon"><CustomerServiceOutlined /></div>
         <div>
           <Typography.Text strong>客服机器人在线</Typography.Text>
-          <Typography.Text type="secondary">知识问答 · 自动转人工</Typography.Text>
+          <Typography.Text type="secondary">知识问答 · 只读订单工具 · 自动转人工</Typography.Text>
         </div>
         <span className="online-dot" />
       </div>

@@ -103,6 +103,18 @@ function AnswerView({ msg, status }: { msg: ChatMessage; status?: MessageStatus 
           description="请提供产品、订单或售后场景，我再继续帮您处理。"
         />
       )}
+      {msg.toolResults?.length && msg.responseMode !== 'handoff' ? (
+        <Alert
+          className="tool-result-alert"
+          type="info"
+          showIcon
+          message="只读业务工具已返回"
+          description={
+            msg.toolResults[0].message
+            ?? (msg.toolResults[0].ok ? '查询成功' : '工具未返回可用结果')
+          }
+        />
+      ) : null}
       {/* 正文：Markdown 排版（流式中逐字展示，空文本时思考中） */}
       <div className="rag-answer" style={{ fontSize: 14, lineHeight: 1.75 }}>
         {displayText ? (

@@ -61,6 +61,24 @@ export interface CustomerMessageResult {
   storage: 'mysql' | 'memory' | 'memory_fallback'
 }
 
+/** 业务工具统一返回（迭代 2 只读订单工具） */
+export interface ToolResultRecord {
+  tool: string
+  status: 'ok' | 'not_found' | 'forbidden' | 'timeout' | 'error'
+  ok: boolean
+  message: string
+  data: {
+    order_no?: string
+    status?: string
+    carrier?: string
+    tracking_no?: string
+    updated_at?: string
+    timeline?: Array<{ time: string; event: string }>
+  } | null
+  retries: number
+  duration_ms: number
+}
+
 export interface ConversationSummary {
   id: string
   status: 'open' | 'handoff' | 'waiting'
