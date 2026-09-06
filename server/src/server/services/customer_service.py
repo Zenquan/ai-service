@@ -29,6 +29,7 @@ from server.services.chat_store import (
     build_default_store,
 )
 from server.services.checkpoint_saver import build_checkpointer
+from server.services.metrics import build_default_recorder
 from server.tools.orders import extract_order_numbers
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,20 @@ def _use_llm_classifier() -> bool:
     return os.getenv("LLM_CLASSIFIER", "").strip() in {"1", "true", "yes", "on"}
 
 
+def _first_tool_status(tool_results: list[dict]) -> str | None:
+    """从 ``tool_results`` 提取首个调用的状态（ok / not_found / forbidden / timeout / error）。
+
+    无工具调用或结果为空时返回 ``None``，评测聚合层会把 ``None`` 视为 ``no_tool``。
+    """
+    if not tool_results:
+        return None
+    first = tool_results[0] or {}
+    status = first.get("status") or first.get("ok")
+    if isinstance(status, bool):
+        return "ok" if status else "error"
+    return str(status) if status else None
+
+
 class CustomerServiceService:
     def __init__(self) -> None:
         self._fallback_store = MemoryChatStore()
@@ -74,6 +89,8 @@ class CustomerServiceService:
         self._lock = Lock()
         self._graph_agent = None
         self._graph_checked = False
+        # 评测指标埋点器：与 chat_store 同款，无 MySQL 回退内存；评测不应阻塞主流程。
+        self._recorder = build_default_recorder()
 
     @property
     def storage_mode(self) -> str:
@@ -174,10 +191,14 @@ class CustomerServiceService:
         message: str,
         user_id: str | None = None,
         tenant_id: str | None = None,
+        message_id: str | None = None,
     ) -> dict | None:
         agent = self._get_graph_agent()
         if agent is None:
             return None
+        import time as _time
+
+        started = _time.monotonic()
         try:
             state = agent.ask(
                 message,
@@ -187,10 +208,17 @@ class CustomerServiceService:
             )
         except Exception:
             logger.exception("LangGraph agent request failed; using RAG fallback")
+            self._record_metrics(
+                conversation_id=conversation_id,
+                message_id=message_id,
+                payload={"error": "graph_exception"},
+                latency_ms=int((_time.monotonic() - started) * 1000),
+            )
             return None
+        latency_ms = int((_time.monotonic() - started) * 1000)
         answer = state.get("final_answer", "")
         contexts = state.get("contexts", [])
-        return {
+        result = {
             "answer": answer,
             "materials": contexts,
             "citations": state.get("citations", []),
@@ -205,6 +233,53 @@ class CustomerServiceService:
             "tool_calls": state.get("tool_calls", []),
             "error": state.get("error"),
         }
+        self._record_metrics(
+            conversation_id=conversation_id,
+            message_id=message_id,
+            payload={
+                "intent": result["intent"],
+                "response_mode": result["response_mode"],
+                "citation_valid": result["citation_valid"],
+                "needs_human": result["needs_human"],
+                "needs_clarification": result["needs_clarification"],
+                "tool_status": _first_tool_status(result["tool_results"]),
+                "tool_calls_count": len(result["tool_calls"]),
+                "materials_count": len(contexts),
+                "citations_count": len(result["citations"]),
+                "error": result["error"],
+                "clarify_reason": result["clarify_reason"],
+                "handoff_reason": result["handoff_reason"],
+            },
+            latency_ms=latency_ms,
+        )
+        return result
+
+    def _record_metrics(
+        self,
+        conversation_id: str,
+        message_id: str | None,
+        payload: dict,
+        latency_ms: int | None = None,
+    ) -> None:
+        """统一的评测埋点入口：记录 trace_id / latency 等元数据后再写入。
+
+        任何异常吞掉——评测埋点不应阻塞业务主流程。
+        """
+        try:
+            from server.observability import get_trace_id
+
+            trace_id = get_trace_id()
+            record_payload = dict(payload)
+            if trace_id:
+                record_payload["trace_id"] = trace_id
+            if latency_ms is not None:
+                record_payload["latency_ms"] = latency_ms
+            record_payload["conversation_id"] = conversation_id
+            if message_id:
+                record_payload["message_id"] = message_id
+            self._recorder.record_event(record_payload)
+        except Exception:  # noqa: BLE001
+            logger.debug("metrics record skipped", exc_info=True)
 
     def _save_graph_state(self, conversation_id: str, state: dict) -> None:
         if not state:
