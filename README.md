@@ -24,6 +24,7 @@
 | 💬 知识问答 | 混合检索（关键词 + 向量 RRF 融合）→ bge-reranker 精排 → DeepSeek 生成 | 右侧 `ChatPanel`（Bubble.List + Sender） |
 | 🔗 引用溯源 | 回答强制 `[来源N]` 标记 + 程序校验越界引用；引用卡片可展开查看依据素材原文 | `AnswerView`（XMarkdown + Sources） |
 | 🧭 客服编排 | LangGraph 图：意图分类 → 知识问答 / 澄清 / 转人工；多轮历史上下文 | 后端 graph 层 |
+| 🔎 只读业务工具 | 订单/物流查询走真实 LangGraph 工具节点：Pydantic 参数校验、归属校验、超时/失败显式转人工；缺单号多轮澄清（checkpoint 恢复） | 后端 tools 层 + graph 层 |
 | 💾 云端持久化 | 会话/消息落 MySQL（回退内存显性标注 `storage`）；文档切块存 MySQL，部署后自动重建向量索引 | 后端 services 层 |
 | 🛡️ 健壮性 | MinerU→markitdown→纯文本三级解析降级、云解析 sha256 缓存、LLM 超时重试、rerank 失败静默回退、空库友好回答 | 后端 core 层 |
 | 🔒 安全 | 上传防路径穿越（只取 basename）、扩展名白名单、密钥只存本地 `server/.env` / 云端环境变量（均不入库） | 后端 ingest 路由 |
@@ -44,6 +45,7 @@
 │  server/main.py：应用工厂（CORS + 路由 + lifespan 云存储重建）                 │
 │  server/api/：health · docs · ingest · ask · conversations                  │
 │  server/services/：rag 融合层 · customer_service · chat_store · doc_store   │
+│  server/tools/：只读业务工具（订单/物流查询 + ToolResult 统一返回）           │
 │  server/graph/：LangGraph 图（rag 图 + customer_service 图，依赖注入）        │
 │  server/core/：RAG 核心（解析→切块→向量→检索→rerank→生成→引用校验）           │
 └───────────────────────────────┬──────────────────────────────────────────────┘
@@ -65,11 +67,11 @@
 
 # 或手动两个终端
 # 1. 后端（Python 3.12，见「为什么锁 3.12」）
-cd fastapi-app/server
+cd server
 .venv/bin/python -m uvicorn server.main:app --reload --port 8000 --workers 1
 
 # 2. 前端（Vite dev proxy: /api → 127.0.0.1:8000）
-cd fastapi-app/web
+cd web
 pnpm install      # 首次
 pnpm dev          # http://localhost:5173
 ```
@@ -100,13 +102,14 @@ pnpm dev          # http://localhost:5173
 ## 📂 目录结构
 
 ```
-fastapi-app/
+ai-service/
 ├── server/                      # 后端单一 Python 包（依赖唯一来源）
 │   ├── pyproject.toml           # 依赖声明：核心 + [local]（fastembed）+ dev 组
 │   ├── src/server/
 │   │   ├── main.py              # FastAPI 应用工厂（uvicorn server.main:app）
 │   │   ├── api/                 # REST 路由：health/docs/ingest/ask/conversations
 │   │   ├── services/            # rag 融合层 / customer_service / chat_store / doc_store
+│   │   ├── tools/               # 只读业务工具：订单/物流查询 + ToolResult 统一返回
 │   │   ├── graph/               # LangGraph 图：rag 图 + customer_service 图（依赖注入）
 │   │   ├── core/                # RAG 核心：chunker/embed_store/retrieve/generate/ingest/citations/config
 │   │   └── cli.py               # CLI：python -m server.cli ingest/ask/run/eval/doc-list/doc-delete
@@ -143,15 +146,16 @@ fastapi-app/
 1. **单一后端包 + src 布局**：rag/langgraph/api 三层合并为 `server` 包，正规 `from server.core.retrieve import retrieve` 导入（无 sys.path hack、无模块名碰撞），依赖单一来源 `server/pyproject.toml`
 2. **编排与检索解耦**：LangGraph 图全部依赖注入（retriever/generator/classifier 参数化），契约测试不碰向量库与模型
 3. **优雅降级 + 显性暴露**：LangGraph 不可用回退 RAG 直答；MySQL 不可用回退内存并在响应体带 `storage` 字段；空库时友好回答而非报错
-4. **云端持久化双保险**：会话消息落 MySQL；文档切块同步存 MySQL，服务启动 lifespan 自动重建向量索引——重新部署不丢数据
-5. **Qdrant local 免 Docker**：与生产远端同 API；单进程锁用 `threading.Lock` + `--workers 1`
-6. **混合检索 RRF**：标题加权 BM25（中文 2-gram + 英文词）与语义向量双路召回 → 排名倒数融合
-7. **结构感知切块**：标题路径和段落边界进入 chunk 元数据、embedding 上下文与 Prompt，超长段落保持完整
-8. **防幻觉闭环**：生成强制 `[来源N]` → 程序校验越界 → 前端「引用校验通过/含越界引用」徽标 + 素材原文展开
+4. **只读工具闭环**：订单/物流查询走 LangGraph 工具节点，Pydantic 入参校验 + 会话归属校验，非本人/失败显式转人工且不改写结果；缺单号由 checkpoint 多轮澄清补齐
+5. **云端持久化双保险**：会话消息落 MySQL；文档切块同步存 MySQL，服务启动 lifespan 自动重建向量索引——重新部署不丢数据
+6. **Qdrant local 免 Docker**：与生产远端同 API；单进程锁用 `threading.Lock` + `--workers 1`
+7. **混合检索 RRF**：标题加权 BM25（中文 2-gram + 英文词）与语义向量双路召回 → 排名倒数融合
+8. **结构感知切块**：标题路径和段落边界进入 chunk 元数据、embedding 上下文与 Prompt，超长段落保持完整
+9. **防幻觉闭环**：生成强制 `[来源N]` → 程序校验越界 → 前端「引用校验通过/含越界引用」徽标 + 素材原文展开
 
 ## ✅ 测试与验证现状
 
-- **统一入口（推荐）**：`cd fastapi-app/server && .venv/bin/python -m pytest` → **68 个用例全绿**
+- **统一入口（推荐）**：`cd server && .venv/bin/python -m pytest` → 全量用例全绿
   - core 纯函数：清洗/切块/引用/混合检索 + 解析降级链与缓存 + ask 错误分支/evaluate 命中率/Prompt 组装
   - graph 图契约：知识问答 / 澄清 / 转人工 / 引用校验重写循环（注入 mock，零外部依赖）
   - 存储层：MySQL 选择 / 内存回退 / 会话列表
@@ -159,21 +163,32 @@ fastapi-app/
 - **端到端实测**：health ✓ / 上传入库 ✓ / 文档列表与删除 ✓ / ask（"什么是 AI Agent？"）回答 + 引用校验 ✓ / 会话消息 storage=mysql 落库 ✓ / 部署重启后向量索引自动重建 ✓
 - **前端**：`tsc --noEmit` 类型检查通过；`vite build` 可出产物
 
+## 🔍 日志与链路排查（trace_id）
+
+- 每个 HTTP 请求响应头都会带 `X-Request-ID`（调用方可自定义请求头透传，未传则由服务端生成），
+  SSE 流式请求全程使用同一个 ID。
+- 服务端业务日志（INFO 起）统一输出到 stdout，**每行自动带当前请求的 trace_id**，
+  格式如 `2026-09-06 15:42:00 INFO [a1b2c3...] server.services.customer_service: 客服消息收到 ...`，
+  中文不乱码、不再“哑火”。
+- 从日志中按 trace_id 即可串起一轮对话的「消息进入 → 混合检索 → LLM 生成 → 回答落库 / 转人工」；
+  启动重建、CLI 等无请求场景的 trace_id 显示为 `-`。
+- 级别默认 INFO，可用环境变量 `LOG_LEVEL=DEBUG`（或 `WARNING`）调整。
+
 ## 🛠️ 常用命令
 
 ```bash
 # 全量测试（server/pyproject.toml 已配 pythonpath=["src"]）
-cd fastapi-app/server && .venv/bin/python -m pytest
+cd server && .venv/bin/python -m pytest
 
 # RAG CLI（不经 API 直接跑核心）
-cd fastapi-app/server
+cd server
 .venv/bin/python -m server.cli ingest data/docs      # 入库
 .venv/bin/python -m server.cli ask "什么是 AI Agent？"
 .venv/bin/python -m server.cli eval                   # 离线 Recall@K / MRR
 .venv/bin/python -m server.cli doc-list               # 列出库内文档
 
 # 前端
-cd fastapi-app/web && pnpm lint && pnpm build
+cd web && pnpm lint && pnpm build
 
 # 部署（CloudBase 云托管 · Git 仓库自动触发）
 # 控制台：绑定 GitHub 仓库 → 服务选择 master 分支并开启自动部署 → Dockerfile 选仓库根目录 Dockerfile

@@ -432,10 +432,10 @@ Qdrant payload 继续保存 `chapter/title/section/heading_path`；客服回答�
 
 - [x] MVP 内存会话和消息接口。
 - [x] 订单/售后/投诉安全转人工；知识问答继续复用 RAG。
+- [x] SSE 流式回复（知识问答逐 token；业务/澄清/转人工走图 meta）。
+- [x] 只读订单/物流 Tool（Pydantic 参数校验、归属校验、超时/失败显式分流）。
 - [ ] PostgreSQL 会话持久化与 LangGraph checkpoint。
 - [ ] 意图识别、知识问答、低置信度追问的完整业务闭环。
-- SSE 流式回复。
-- 只读订单/物流 Tool。
 - 引用校验、工具结果校验和基础转人工。
 
 ### Phase 2：生产化
@@ -464,4 +464,6 @@ Qdrant payload 继续保存 `chapter/title/section/heading_path`；客服回答�
 
 ## 14. 当前建议
 
-下一步优先统一 LangGraph 运行环境并增加 PostgreSQL checkpoint，再增加 SSE 和只读业务 Tool。当前可验收闭环是“会话消息接口 + 知识问答 + 订单/售后请求转人工”。
+当前可验收闭环：会话消息接口 + 知识问答（流式 RAG）+ 订单/物流只读工具（本人可查、缺单号澄清、非本人/失败转人工）。
+下一步按 Phase 1 剩余项收敛：图节点流式 generator（让知识问答也整体走图）、真实业务只读接口替换演示订单源、
+PostgreSQL 会话/checkpoint 持久化，再进入 Phase 2 认证与多租户。

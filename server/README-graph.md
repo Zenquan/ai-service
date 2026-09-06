@@ -12,7 +12,12 @@
 START → load_session → classify_intent
   ├── knowledge_question → retrieve → compose → validate → finalize
   ├── greeting/unknown → clarify → END
-  └── order/after_sale/complaint → handoff → END
+  ├── after_sale/complaint → handoff → END
+  └── order_query → extract_slots
+        ├── 缺订单号 → clarify（多轮补齐，checkpoint 恢复）
+        └── 有订单号 → execute_order_tool
+              ├── 本人订单 → 工具结果组装 answer → finalize
+              └── 非本人/查无此单/超时/异常 → handoff → END
 ```
 
 原始 RAG 图仍保留，用于兼容已有实验和 LangGraph Studio 调试。

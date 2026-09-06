@@ -6,6 +6,8 @@ Base URL：`http://127.0.0.1:8000/api/v1`（前端经 Vite proxy `/api` → 同�
 - 约定：请求/响应均为 JSON（ingest 除外：multipart/form-data）
 - CORS：允许 `localhost:5173/4173`（Vite dev/preview）
 - 运行约束：uvicorn 必须 `--workers 1`（Qdrant local 单进程锁）
+- 链路追踪：所有 HTTP 响应头带 `X-Request-ID`；请求方可传自定义
+  `X-Request-ID` 透传同一 ID，服务端日志按该 ID 串联一轮对话（见根 README「日志与链路排查」）
 
 ---
 
@@ -207,7 +209,13 @@ curl -X POST http://127.0.0.1:8000/api/v1/ask \
 
 ## 客服会话 API
 
-客服工作台使用会话消息接口。当前会话状态保存在进程内，服务重启后会清空；订单、物流、退款、售后和投诉请求不会调用知识问答，而是返回人工接管状态。
+客服工作台使用会话消息接口。会话/消息按 `MYSQL_*` 配置落库（否则内存回退并显式返回 `storage`）。
+消息处理走 LangGraph 客服图：知识问答走流式 RAG；**订单/物流查询进入只读业务工具**
+（演示订单源在 `server/src/server/tools/orders.py`），缺订单号会澄清补齐、非本人订单/工具失败显式转人工；
+退款、售后、投诉仍安全转人工。
+
+> 身份字段 `user_id`/`tenant_id` 是无登录阶段的开发/测试占位：会话首次创建时绑定，
+> 订单工具只允许查询 `user_id` 自己的订单。接入真实认证前请勿在生产开放客户端自选身份。
 
 ### GET /conversations/{id}
 
@@ -232,18 +240,40 @@ curl -X POST http://127.0.0.1:8000/api/v1/ask \
 
 ### POST /conversations/{id}/messages
 
-请求体：
+请求体（`user_id`/`tenant_id` 可选，无登录演示默认为 `demo-user`）：
 
 ```json
-{ "message": "帮我查订单物流" }
+{ "message": "帮我查一下订单 A00001 的物流", "user_id": "demo-user" }
 ```
 
-知识问题返回 `response_mode=answer`，并携带 `materials`、`citations` 和 `citation_valid`；订单/售后/投诉等请求返回 `response_mode=handoff`、`needs_human=true` 和 `handoff_reason`。
+行为：
+
+- 知识问题 → `response_mode=answer`，携带 `materials`、`citations`、`citation_valid`。
+- 订单缺单号 → `response_mode=clarify`（`waiting`），下一轮直接补订单号即可继续（checkpoint 恢复）。
+- 非本人订单 / 查无此单 / 工具超时 → `response_mode=handoff` + `needs_human=true` + `handoff_reason`。
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/conversations/demo/messages \
   -H "Content-Type: application/json" \
-  -d '{"message":"帮我查订单物流"}'
+  -d '{"message":"A00001","user_id":"demo-user"}'
+```
+
+### POST /conversations/{id}/messages/stream
+
+SSE 流式事件（`event: <type>\ndata: <json>\n\n`）：
+
+| event | 说明 |
+| --- | --- |
+| `progress` | 图内工具执行中的可见状态（如“正在查询订单与物流…”） |
+| `meta` | 图结果（澄清 / 工具回答 / 转人工）：完整 `answer` 一次到位 |
+| `materials` / `token` | 知识问答检索结果与逐 token 生成 |
+| `done` | 终态（含 `storage`；图结果分支不重复带 answer） |
+| `error` | 检索/生成/图执行失败 |
+
+```bash
+curl -N -X POST http://127.0.0.1:8000/api/v1/conversations/demo/messages/stream \
+  -H "Content-Type: application/json" \
+  -d '{"message":"帮我查一下订单 A00001 的物流","user_id":"demo-user"}'
 ```
 
 ---
