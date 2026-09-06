@@ -1,6 +1,7 @@
 # langgraph-graph
 
-智能客服的 **LangGraph 图编排层**，复用 `rag` 核心（FastEmbed 向量 + Qdrant 混合检索 + DeepSeek 生成），当前先落地“知识问答 + 低置信度澄清 + 业务请求转人工”的安全闭环。
+智能客服的 **LangGraph 图编排层**，复用 `rag` 核心（FastEmbed 向量 + Qdrant 混合检索 + DeepSeek 生成）。
+客服消息按“三层路由”处理：快速业务意图 → 知识 RAG 优先 → 检索无素材时澄清/转人工。
 
 `rag/` 继续负责检索质量；本目录负责客服状态、意图路由、重试和人工接管。模型、检索器和分类器都可通过依赖注入替换。
 
@@ -19,6 +20,19 @@ START → load_session → classify_intent
               ├── 本人订单 → 工具结果组装 answer → finalize
               └── 非本人/查无此单/超时/异常 → handoff → END
 ```
+
+客服层三层路由（`customer_service.stream_message`）：
+
+```text
+第一层：关键词显性业务意图（投诉/售后/人工/问候/带单号的订单）
+第二层：其余默认 RAG 检索 → 有素材 → 引用回答
+第三层：无素材 → 第一次明确告知并给去向（换说法 / 转人工）
+        → 第二轮仍无解 → 转人工，避免反复澄清卡死
+```
+
+人工接管：会话进入 `handoff`/`manual` 后，坐席通过
+`POST /api/v1/conversations/{id}/messages/manual` 直接回复
+（`response_mode=manual`），不走 AI 检索/生成链路。
 
 原始 RAG 图仍保留，用于兼容已有实验和 LangGraph Studio 调试。
 

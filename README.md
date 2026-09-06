@@ -23,10 +23,12 @@
 | 📚 知识库管理 | 拖拽/点选上传（PDF/TXT/MD/DOCX/HTML/图片）、文档列表、chunk 数统计、单文档删除（增量不重建） | 左侧 `KnowledgePanel` |
 | 💬 知识问答 | 混合检索（关键词 + 向量 RRF 融合）→ bge-reranker 精排 → DeepSeek 生成 | 右侧 `ChatPanel`（Bubble.List + Sender） |
 | 🔗 引用溯源 | 回答强制 `[来源N]` 标记 + 程序校验越界引用；引用卡片可展开查看依据素材原文 | `AnswerView`（XMarkdown + Sources） |
-| 🧭 客服编排 | LangGraph 图：意图分类 → 知识问答 / 澄清 / 转人工；多轮历史上下文 | 后端 graph 层 |
+| 🧭 客服编排 | 三层路由：快速业务意图 → RAG 知识优先 → 检索无素材时澄清/转人工；多轮历史上下文 | 后端 graph 层 + services 层 |
+| ✋ 人工接管 | AI 转人工后坐席可直接回复（`response_mode=manual`），会话进入 `manual` 状态，界面切换为人工模式 | ChatPanel + customer_service |
+| 🔐 登录认证 | demo JWT：`operator`（运营）与 `customer`（普通用户）双角色；客户消息身份取自 token，人工回复需运营角色 | auth 模块 + LoginPage/CustomerChat |
 | 🔎 只读业务工具 | 订单/物流查询走真实 LangGraph 工具节点：Pydantic 参数校验、归属校验、超时/失败显式转人工；缺单号多轮澄清（checkpoint 恢复） | 后端 tools 层 + graph 层 |
 | 💾 云端持久化 | 会话/消息落 MySQL（回退内存显性标注 `storage`）；文档切块存 MySQL，部署后自动重建向量索引 | 后端 services 层 |
-| 🛡️ 健壮性 | MinerU→markitdown→纯文本三级解析降级、云解析 sha256 缓存、LLM 超时重试、rerank 失败静默回退、空库友好回答 | 后端 core 层 |
+| 🛡️ 健壮性 | MinerU→markitdown→纯文本三级解析降级、云解析 sha256 缓存、LLM 超时重试、rerank 失败静默回退、空库友好回答 / 客服层无素材二次澄清后转人工 | 后端 core 层 |
 | 🔒 安全 | 上传防路径穿越（只取 basename）、扩展名白名单、密钥只存本地 `server/.env` / 云端环境变量（均不入库） | 后端 ingest 路由 |
 
 ## 🏗️ 系统架构
@@ -44,6 +46,7 @@
 ┌─────────────────── server 包（uvicorn :8000，--workers 1）──────────────────┐
 │  server/main.py：应用工厂（CORS + 路由 + lifespan 云存储重建）                 │
 │  server/api/：health · docs · ingest · ask · conversations                  │
+│  server/auth/：demo 账号 + JWT 签发/校验 + operator/customer 角色依赖       │
 │  server/services/：rag 融合层 · customer_service · chat_store · doc_store   │
 │  server/tools/：只读业务工具（订单/物流查询 + ToolResult 统一返回）           │
 │  server/graph/：LangGraph 图（rag 图 + customer_service 图，依赖注入）        │
@@ -60,6 +63,15 @@
 - **问答**：query 向量化 → 向量与标题加权 BM25 双路候选 → RRF 融合 → rerank 精排/阈值过滤 → 编号素材注入 Prompt → DeepSeek 生成（强制 `[来源N]`）→ 引用校验
 
 ## 🚀 快速开始
+
+登录（demo 账号，密码可用 `AUTH_*` 环境变量覆盖）：
+
+| 角色 | 账号 | 默认密码 |
+| --- | --- | --- |
+| 运营 Zenquan | `zenquan` | `zenquan123` |
+| 普通用户 Alice | `alice` | `alice123` |
+
+运营账号进入客服工作台；普通用户账号进入客户聊天窗，可端到端验证“提问 → AI → 转人工 → 运营回复”。
 
 ```bash
 # 一键启动（后端 :8000 + 前端 :5173）

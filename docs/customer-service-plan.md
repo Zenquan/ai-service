@@ -434,13 +434,17 @@ Qdrant payload 继续保存 `chapter/title/section/heading_path`；客服回答�
 - [x] 订单/售后/投诉安全转人工；知识问答继续复用 RAG。
 - [x] SSE 流式回复（知识问答逐 token；业务/澄清/转人工走图 meta）。
 - [x] 只读订单/物流 Tool（Pydantic 参数校验、归属校验、超时/失败显式分流）。
+- [x] 三层路由：快速业务意图 → RAG 知识优先 → 无素材澄清；连续两轮无解转人工。
+- [x] 页面链路提示：气泡“当前链路”标签 + 澄清原因 + 右侧路由高亮。
+- [x] 人工接管后坐席直接回复：`POST .../messages/manual`，`response_mode=manual`，前端切换人工模式。
 - [ ] PostgreSQL 会话持久化与 LangGraph checkpoint。
 - [ ] 意图识别、知识问答、低置信度追问的完整业务闭环。
 - 引用校验、工具结果校验和基础转人工。
 
 ### Phase 2：生产化
 
-- JWT/OAuth、租户隔离、PostgreSQL、Redis。
+- [x] JWT 演示认证：operator/customer 双角色、登录接口、接口按角色鉴权（仓库内双端页面）。
+- [ ] JWT/OAuth 生产化（真实验证码/密码重置/多租户隔离）、PostgreSQL、Redis。
 - LangGraph checkpoint 和人工接管恢复。
 - 结构化日志、trace、指标面板和告警。
 - 脱敏、限流、熔断和安全评测。
@@ -464,6 +468,6 @@ Qdrant payload 继续保存 `chapter/title/section/heading_path`；客服回答�
 
 ## 14. 当前建议
 
-当前可验收闭环：会话消息接口 + 知识问答（流式 RAG）+ 订单/物流只读工具（本人可查、缺单号澄清、非本人/失败转人工）。
+当前可验收闭环：会话消息接口 + 三层路由（快速意图 → 知识 RAG → 澄清/人工）+ 订单/物流只读工具（本人可查、缺单号澄清、非本人/失败转人工）。
 下一步按 Phase 1 剩余项收敛：图节点流式 generator（让知识问答也整体走图）、真实业务只读接口替换演示订单源、
 PostgreSQL 会话/checkpoint 持久化，再进入 Phase 2 认证与多租户。

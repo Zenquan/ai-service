@@ -210,12 +210,29 @@ curl -X POST http://127.0.0.1:8000/api/v1/ask \
 ## 客服会话 API
 
 客服工作台使用会话消息接口。会话/消息按 `MYSQL_*` 配置落库（否则内存回退并显式返回 `storage`）。
-消息处理走 LangGraph 客服图：知识问答走流式 RAG；**订单/物流查询进入只读业务工具**
+消息处理走三层路由：显性业务意图（投诉/售后/问候/订单）→ 其余先走流式 RAG → 检索不到素材时澄清或转人工。
+**订单/物流查询进入只读业务工具**
 （演示订单源在 `server/src/server/tools/orders.py`），缺订单号会澄清补齐、非本人订单/工具失败显式转人工；
 退款、售后、投诉仍安全转人工。
 
 > 身份字段 `user_id`/`tenant_id` 是无登录阶段的开发/测试占位：会话首次创建时绑定，
 > 订单工具只允许查询 `user_id` 自己的订单。接入真实认证前请勿在生产开放客户端自选身份。
+
+登录后调用客服接口建议带 `Authorization: Bearer <token>`：带 token 时 `user_id`
+取 token 里的用户，忽略请求体自填值；人工回复接口必须由 `operator` 调用。
+
+### POST /auth/login
+
+```json
+{ "username": "alice", "password": "alice123" }
+```
+
+返回 `{ "token", "user": { "id", "username", "role", "display_name" } }`。
+运营账号 `zenquan` → `role=operator`；客户账号 `alice` → `role=customer`。
+
+### GET /auth/me
+
+返回当前 token 对应的用户信息。
 
 ### GET /conversations/{id}
 
@@ -232,7 +249,8 @@ curl -X POST http://127.0.0.1:8000/api/v1/ask \
 }
 ```
 
-`status` 为 `open`、`waiting` 或 `handoff`，分别表示 AI 处理中、等待补充信息和等待人工接管。
+`status` 为 `open`、`waiting`、`handoff` 或 `manual`，分别表示 AI 处理中、等待补充信息、
+等待人工接管和人工坐席已回复。
 
 ### GET /conversations/{id}/messages
 
@@ -249,6 +267,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/ask \
 行为：
 
 - 知识问题 → `response_mode=answer`，携带 `materials`、`citations`、`citation_valid`。
+- 知识问题无素材 → 第一次 `response_mode=clarify`（说明去向）；第二轮仍无素材 → `response_mode=handoff`，不再反复澄清。
 - 订单缺单号 → `response_mode=clarify`（`waiting`），下一轮直接补订单号即可继续（checkpoint 恢复）。
 - 非本人订单 / 查无此单 / 工具超时 → `response_mode=handoff` + `needs_human=true` + `handoff_reason`。
 
@@ -264,8 +283,8 @@ SSE 流式事件（`event: <type>\ndata: <json>\n\n`）：
 
 | event | 说明 |
 | --- | --- |
-| `progress` | 图内工具执行中的可见状态（如“正在查询订单与物流…”） |
-| `meta` | 图结果（澄清 / 工具回答 / 转人工）：完整 `answer` 一次到位 |
+| `progress` | 当前阶段可见状态（“正在理解意图并检索知识库…” / “正在查询订单与物流…”），不拼进最终正文 |
+| `meta` | 图/三层路由结果（澄清 / 工具回答 / 转人工）：完整 `answer` 一次到位，带 `intent`、`clarify_reason` |
 | `materials` / `token` | 知识问答检索结果与逐 token 生成 |
 | `done` | 终态（含 `storage`；图结果分支不重复带 answer） |
 | `error` | 检索/生成/图执行失败 |
@@ -274,6 +293,23 @@ SSE 流式事件（`event: <type>\ndata: <json>\n\n`）：
 curl -N -X POST http://127.0.0.1:8000/api/v1/conversations/demo/messages/stream \
   -H "Content-Type: application/json" \
   -d '{"message":"帮我查一下订单 A00001 的物流","user_id":"demo-user"}'
+```
+
+### POST /conversations/{id}/messages/manual
+
+人工坐席回复（仅 `handoff`/`manual` 状态会话可用，其它状态返回 409）：
+
+```json
+{ "message": "您好，我是人工客服，正在为您核实，请稍候。", "agent_name": "Zenquan" }
+```
+
+消息以 `response_mode=manual` 落库，会话状态更新为 `manual`；
+前端收到后切换为人工模式，不再经过 AI 链路。
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/conversations/demo/messages/manual \
+  -H "Content-Type: application/json" \
+  -d '{"message":"您好，人工已接管，请稍候。"}'
 ```
 
 ---
