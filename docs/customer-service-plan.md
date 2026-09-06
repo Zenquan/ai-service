@@ -446,15 +446,16 @@ Qdrant payload 继续保存 `chapter/title/section/heading_path`；客服回答�
 - [x] 会话/消息 MySQL 持久化（回退内存显性标注 `storage`）；文档切块同步存 MySQL、启动自动重建向量索引。
 - [x] 意图识别、知识问答、低置信度追问的业务闭环（确定性分类器 + 三层路由 + 澄清转人工）。
 - [x] 引用校验、工具结果校验和基础转人工。
-- [ ] LangGraph checkpoint 生产持久化（重启不丢澄清/转人工中间态）。
+- [x] LangGraph checkpoint 生产持久化（重启不丢澄清/转人工中间态）。
 
 ### Phase 2：生产化
 
 - [x] JWT 演示认证：operator/customer 双角色、登录接口、接口按角色鉴权（仓库内双端页面）。
 - [x] 结构化日志 + 请求级 trace_id 链路追踪（日志每行带 trace_id，可按 ID 串起一轮对话）。
+- [x] 客服任务评测体系：指标埋点（evaluation_events）+ Prometheus 指标暴露（/metrics）+ Grafana 面板 + 告警（阈值判定/webhook/运营端面板）。
+- [x] 安全加固（PII 脱敏）：Prompt、指标埋点、API 响应三层脱敏（pure regex + recursive）。
 - [ ] JWT/OAuth 生产化（真实验证码/密码重置/令牌刷新/多租户隔离）、MySQL 表结构扩展、Redis。
-- [ ] LangGraph checkpoint 持久化和人工接管恢复。
-- [ ] 指标面板和告警、脱敏、限流、熔断和安全评测。
+- [ ] 限流、熔断和安全评测。
 
 ### Phase 3：业务闭环
 
@@ -486,11 +487,13 @@ Qdrant payload 继续保存 `chapter/title/section/heading_path`；客服回答�
 - 请求级 trace_id 统一日志链路追踪。
 - LangGraph checkpoint 生产持久化（MySQL 后端 checkpointer）：澄清/转人工中间态按 thread_id=conversation_id 持久化，重启恢复。
 - LLM 意图分类器：`llm_classifier.LLMIntentClassifier` 替换确定性规则，JSON 结构化输出（intent/confidence/slots），低置信度（<0.7）由 LLM 生成针对性追问；失败/无 key 自动回退规则分类器，`LLM_CLASSIFIER=1` 启用（默认关闭保持确定性）。
+- 客服任务评测体系：`metrics.py` 指标埋点（`evaluation_events` 表，MySQL + 内存回退）、`prom_exporter.py` Prometheus 指标暴露（`/metrics`，官方 `prometheus_client` 库）、`alerts.py` 告警（转人工率/出错率/无依据承诺率阈值判定 + webhook + `evaluation_alerts` 表）、Grafana 面板（`deploy/grafana/dashboard.json`）+ Prometheus 告警规则（`deploy/prometheus/alerts.yml`）、运营端告警面板。
+- 安全加固（PII 脱敏）：`redactor.py` 纯正则脱敏器（手机号/身份证/邮箱/银行卡/订单号）+ Prompt/指标/API 响应三层接入（`REDACTOR_ENABLED` 开关）。
 
 ### 下一步迭代
 
 1. **真实业务只读接口**：替换演示订单源，接入真实订单/物流系统。
 2. **JWT/OAuth 生产化**：真实验证码、密码重置、令牌刷新、多租户隔离。
-3. **客服任务评测体系**：一次解决率、转人工率、工具成功率、无依据承诺率等指标 + 离线评测集。
-4. **安全与可靠性加固**：脱敏、限流、熔断、审计与告警。
+3. **离线评测集**：一次解决率、转人工率等指标已在线埋点，补充离线评测集（intent/relevant/expected_tools 标注）与 Recall@K/MRR 检索评测联动。
+4. **限流、熔断与安全评测**：脱敏已落地，补充限流（Redis）、工具调用熔断、审计日志。
 5. **受控写操作**（Phase 3）：退款/改址/取消订单走「展示影响 → 确认 → 执行」三步。

@@ -173,8 +173,18 @@ ai-service/
   - graph 图契约：知识问答 / 澄清 / 转人工 / 引用校验重写循环（注入 mock，零外部依赖）
   - 存储层：MySQL 选择 / 内存回退 / 会话列表
   - 接口层：FastAPI TestClient，打桩服务层（health/docs/ingest 白名单与防穿越/ask 参数与错误透传/会话 API）
+  - 评测与告警：指标埋点 / Prometheus 暴露聚合 / 告警阈值判定（转人工率/出错率/无依据承诺率）
+  - 安全脱敏：手机号/身份证/邮箱/银行卡/订单号 PII 脱敏（Prompt/指标/响应三层）
 - **端到端实测**：health ✓ / 上传入库 ✓ / 文档列表与删除 ✓ / ask（"什么是 AI Agent？"）回答 + 引用校验 ✓ / 会话消息 storage=mysql 落库 ✓ / 部署重启后向量索引自动重建 ✓
 - **前端**：`tsc --noEmit` 类型检查通过；`vite build` 可出产物
+
+## 📊 评测与监控（客服任务评测体系）
+
+- **指标埋点**：每轮对话结束记录 `evaluation_events`（意图/响应模式/引用校验/转人工/追问/工具状态/时延），MySQL 持久化 + 内存回退。
+- **指标暴露**：`GET /metrics` 输出 Prometheus 文本（前缀 `cs_eval_`），官方 `prometheus_client` 库，覆盖一次解决率、转人工率、工具成功率、无依据承诺率、响应时延 P50/P95。
+- **告警**：转人工率 / 出错率 / 无依据承诺率 三项滑动窗口阈值判定，命中落 `evaluation_alerts` 表 + 可选 webhook 推送（`ALERT_WEBHOOK_URL`）；运营端「告警」入口查看近期告警。
+- **监控配置**：`deploy/grafana/dashboard.json`（面板）+ `deploy/prometheus/alerts.yml` + `prometheus.yml`（抓取 + 告警规则），导入 Grafana 即可。
+- **阈值可配**：`ALERT_HANDOFF_RATE` / `ALERT_ERROR_RATE` / `ALERT_UNFOUNDED_RATE` / `ALERT_MIN_SAMPLES`（详见 `.env.local.example`）。
 
 ## 🔍 日志与链路排查（trace_id）
 
