@@ -1,0 +1,19 @@
+# Prometheus 抓取 + 告警配置（客服任务评测监控）
+#
+# 用法：docker/podman 或本地 prometheus --config.file=prometheus.yml
+# 抓取 FastAPI 服务 /metrics（cs_eval_*），加载同目录 alerts.yml 告警规则。
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "alerts.yml"
+
+scrape_configs:
+  - job_name: customer-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["localhost:8000"]
+        labels:
+          service: ai-customer-service

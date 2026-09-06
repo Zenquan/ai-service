@@ -1,0 +1,79 @@
+# 客服任务评测指标告警规则（Prometheus）
+#
+# 抓取目标：FastAPI 服务的 /metrics 端点（cs_eval_* 指标）。
+# 指标前缀见 server/src/server/services/prom_exporter.py。
+#
+# 用法：在 prometheus.yml 中引用本文件，并配置 scrape_configs 指向服务 /metrics：
+#   scrape_configs:
+#     - job_name: customer-service
+#       static_configs:
+#         - targets: ["localhost:8000"]
+#   rule_files:
+#     - "alerts.yml"
+#
+# 说明：比率类指标基于 Counter 的累积值，用 rate() 计算窗口增量比率。
+# 阈值（可调）与 server 内建告警（ALERT_HANDOFF_RATE 等）独立，二者可互补：
+# 本规则由 Prometheus 侧聚合，server 内建告警按进程内窗口即时触发。
+
+groups:
+  - name: customer_service_eval
+    rules:
+      # ── 转人工率过高 ──
+      # 5 分钟窗口内转人工占比 > 50%，提示客服链路自动解决能力下降。
+      - alert: CustomerServiceHighHandoffRate
+        expr: |
+          (
+            sum(rate(cs_eval_human_handoff_total[5m]))
+            /
+            clamp_min(sum(rate(cs_eval_requests_total[5m])), 1)
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "客服转人工率过高"
+          description: "近 5 分钟转人工率 {{ $value | humanizePercentage }}，超过 50% 阈值，请检查知识库覆盖与路由。"
+
+      # ── 出错率过高 ──
+      # 5 分钟窗口内出错请求占比 > 30%。
+      - alert: CustomerServiceHighErrorRate
+        expr: |
+          (
+            sum(rate(cs_eval_errors_total[5m]))
+            /
+            clamp_min(sum(rate(cs_eval_requests_total[5m])), 1)
+          ) > 0.3
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "客服出错率过高"
+          description: "近 5 分钟出错率 {{ $value | humanizePercentage }}，超过 30% 阈值，请检查检索/生成/工具链路。"
+
+      # ── 无依据承诺率过高（引用无效）──
+      # 5 分钟窗口内引用校验失败（valid="0"）占比 > 30%。
+      - alert: CustomerServiceHighUnfoundedRate
+        expr: |
+          (
+            sum(rate(cs_eval_citation_valid_total{valid="0"}[5m]))
+            /
+            clamp_min(
+              sum(rate(cs_eval_citation_valid_total[5m])), 1
+            )
+          ) > 0.3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "无依据承诺率过高"
+          description: "近 5 分钟引用校验失败率 {{ $value | humanizePercentage }}，超过 30% 阈值，请检查生成与引用校验。"
+
+      # ── 响应时延 P95 过高 ──
+      - alert: CustomerServiceHighLatency
+        expr: histogram_quantile(0.95, sum(rate(cs_eval_latency_seconds_bucket[5m])) by (le)) > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "客服响应 P95 时延过高"
+          description: "近 5 分钟 P95 响应时延 {{ $value | humanizeDuration }}，超过 10s 阈值。"
