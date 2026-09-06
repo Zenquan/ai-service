@@ -83,6 +83,18 @@ export interface ManualReplyResult {
   agent_name: string
 }
 
+/** 客服评测告警记录 */
+export interface EvalAlert {
+  rule: 'handoff_rate' | 'error_rate' | 'unfounded_rate'
+  current_value: number
+  threshold: number
+  window_samples: number
+  conversation_id: string | null
+  trace_id: string | null
+  message: string
+  created_at: string
+}
+
 /** 业务工具统一返回（迭代 2 只读订单工具） */
 export interface ToolResultRecord {
   tool: string
@@ -200,4 +212,7 @@ export const api = {
         body: JSON.stringify({ message, agent_name: agentName }),
       },
     ),
+
+  recentAlerts: (limit = 50) =>
+    request<EvalAlert[]>(`/api/v1/alerts/recent?limit=${limit}`),
 }

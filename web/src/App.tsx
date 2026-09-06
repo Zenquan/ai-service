@@ -1,8 +1,10 @@
 /** 智应客服中心：会话队列 + AI 对话 + 实时上下文。 */
 
 import { useCallback, useEffect, useState } from 'react'
-import { App as AntApp, Button, Modal, Tooltip } from 'antd'
+import { App as AntApp, Badge, Button, Modal, Tooltip } from 'antd'
+import { AlertOutlined } from '@ant-design/icons'
 import { XProvider } from '@ant-design/x'
+import AlertsPanel from './components/AlertsPanel'
 import ChatPanel from './components/ChatPanel'
 import ContextPanel from './components/ContextPanel'
 import ConversationSidebar from './components/ConversationSidebar'
@@ -28,6 +30,8 @@ const themeConfig = {
 export default function App() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(() => getAuthUser())
   const [knowledgeOpen, setKnowledgeOpen] = useState(false)
+  const [alertsOpen, setAlertsOpen] = useState(false)
+  const [alertCount, setAlertCount] = useState(0)
   const [conversationVersion, setConversationVersion] = useState(0)
   const [materials, setMaterials] = useState<Material[]>([])
   // 真实会话列表（数据库）+ 当前选中会话（null = 新会话）
@@ -111,6 +115,19 @@ export default function App() {
             <div className="header-actions">
               <Tooltip title="后端、检索与生成服务均在线"><span className="system-health"><i /> 系统在线</span></Tooltip>
               <span className="header-divider" />
+              <Tooltip title="评测告警">
+                <Button
+                  className="alerts-button"
+                  type="text"
+                  onClick={() => setAlertsOpen(true)}
+                >
+                  <Badge count={alertCount} size="small" offset={[4, -2]}>
+                    <AlertOutlined className="alerts-icon" />
+                  </Badge>
+                  告警
+                </Button>
+              </Tooltip>
+              <span className="header-divider" />
               <div className="operator"><span className="operator-avatar">Z</span><span><strong>{authUser.display_name}</strong><small>客服运营</small></span></div>
               <Button className="logout-button" type="text" onClick={handleLogout}>退出</Button>
             </div>
@@ -166,6 +183,16 @@ export default function App() {
           onCancel={() => setKnowledgeOpen(false)}
         >
           <div className="knowledge-modal-body"><KnowledgePanel /></div>
+        </Modal>
+        <Modal
+          title="评测告警"
+          open={alertsOpen}
+          footer={null}
+          width={680}
+          styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }}
+          onCancel={() => setAlertsOpen(false)}
+        >
+          <AlertsPanel onRefresh={setAlertCount} />
         </Modal>
       </AntApp>
     </XProvider>
