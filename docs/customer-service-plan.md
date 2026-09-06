@@ -88,7 +88,7 @@ flowchart TB
     GRAPH --> TOOLS["业务工具层\n订单 / 物流 / 售后"]
     GRAPH --> GUARD["安全与策略\n认证 / 权限 / 风险 / 转人工"]
 
-    SESSION --> DB[("PostgreSQL")]
+    SESSION --> DB[("MySQL")]
     SESSION --> REDIS[("Redis")]
     RAG --> QDRANT[("Qdrant")]
     TOOLS --> BIZ["业务系统 API"]
@@ -119,7 +119,7 @@ LangGraph 客服流程图
       │
       ├── RAG Core：rag/
       ├── Business Tools：订单、物流、售后
-      ├── PostgreSQL：会话、消息、审计
+      ├── MySQL：会话、消息、审计
       ├── Qdrant：知识库向量和结构元数据
       └── Redis：限流、短期状态和任务队列（后续引入）
 ```
@@ -132,7 +132,7 @@ LangGraph 客服流程图
 | LLM 抽象 | `langchain-core` 按需使用 | 获得标准消息/Tool/Prompt 接口，避免绑定完整生态 |
 | RAG | 保留自研 `rag/` | 已有结构化切块、混合召回和评测，便于质量控制 |
 | API | FastAPI REST + SSE | REST 适合管理资源，SSE 适合回复流和节点事件 |
-| 主数据库 | PostgreSQL | 会话、消息、用户、工具审计需要事务和查询能力 |
+| 主数据库 | MySQL | 会话、消息、用户、工具审计需要事务和查询能力；与现有 `chat_store` 持久化层一致 |
 | 向量库 | Qdrant | 延续现有实现；生产环境切远端服务 |
 | 认证 | MVP 使用 `conversation_id`，上线前接 JWT/OAuth | 先完成流程验证，再接入真实用户体系；业务工具必须在正式认证后开放 |
 | 组织方式 | 按客服 feature 组织新增代码 | 避免把意图、工具、会话逻辑继续堆进单一 `rag.py` |
@@ -447,7 +447,7 @@ Qdrant payload 继续保存 `chapter/title/section/heading_path`；客服回答�
 
 - [x] JWT 演示认证：operator/customer 双角色、登录接口、接口按角色鉴权（仓库内双端页面）。
 - [x] 结构化日志 + 请求级 trace_id 链路追踪（日志每行带 trace_id，可按 ID 串起一轮对话）。
-- [ ] JWT/OAuth 生产化（真实验证码/密码重置/令牌刷新/多租户隔离）、PostgreSQL、Redis。
+- [ ] JWT/OAuth 生产化（真实验证码/密码重置/令牌刷新/多租户隔离）、MySQL 表结构扩展、Redis。
 - [ ] LangGraph checkpoint 持久化和人工接管恢复。
 - [ ] 指标面板和告警、脱敏、限流、熔断和安全评测。
 
