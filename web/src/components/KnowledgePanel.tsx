@@ -205,7 +205,7 @@ export default function KnowledgePanel() {
           <Alert
             type="error"
             showIcon
-            message="后端不可用"
+            title="后端不可用"
             description="请先启动 FastAPI：rag/.venv/bin/python -m uvicorn app.main:app --port 8000"
           />
         )}

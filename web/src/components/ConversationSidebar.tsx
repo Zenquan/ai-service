@@ -179,7 +179,7 @@ export default function ConversationSidebar({
       </button>
       <div className="sidebar-footer">
         <span><TeamOutlined /> 运营团队</span>
-        <Tag bordered={false} color="blue">MVP</Tag>
+        <Tag variant="filled" color="blue">MVP</Tag>
       </div>
     </div>
   )

@@ -1275,19 +1275,32 @@ button.operator:focus-visible {
   text-align: right;
 }
 
-.handoff-answer-alert,
+/* AI 回答顶部的「当前链路」标签（人工坐席回复 / 知识库引用回答 等） */
+.answer-layer-tag {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.answer-layer-tag .ant-tag {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  padding: 1px 8px;
+  border-radius: 4px;
+}
+
 .clarify-answer-alert {
   margin-bottom: 12px;
   border-radius: 9px;
 }
 
-.handoff-answer-alert .ant-alert-message,
 .clarify-answer-alert .ant-alert-message {
   font-size: 12px;
   font-weight: 650;
 }
 
-.handoff-answer-alert .ant-alert-description,
 .clarify-answer-alert .ant-alert-description {
   font-size: 11px;
   line-height: 1.55;

@@ -131,7 +131,7 @@ export default function CustomerChat({
           <div><strong>智应智能客服</strong><span>CUSTOMER SERVICE</span></div>
         </div>
         <div className="header-actions">
-          <Tag color={user.role === 'operator' ? 'blue' : 'green'} bordered={false}>
+          <Tag color={user.role === 'operator' ? 'blue' : 'green'} variant="filled">
             {user.role === 'operator' ? '运营' : '普通用户'}
           </Tag>
           <span className="header-divider" />

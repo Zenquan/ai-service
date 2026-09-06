@@ -33,7 +33,7 @@ export default function LoginPage({ onLogin }: { onLogin: (user: AuthUser) => vo
           <Typography.Title level={3}>智应客服中心</Typography.Title>
           <Typography.Text type="secondary">登录后按角色进入运营台或客户聊天</Typography.Text>
         </div>
-        {error ? <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} /> : null}
+        {error ? <Alert type="error" showIcon title={error} style={{ marginBottom: 16 }} /> : null}
         <Form layout="vertical" onFinish={handleSubmit} disabled={loading}>
           <Form.Item name="username" label="账号" rules={[{ required: true, message: '请输入账号' }]}>
             <Input prefix={<UserOutlined />} placeholder="运营：zenquan / 客户：alice" autoComplete="username" />

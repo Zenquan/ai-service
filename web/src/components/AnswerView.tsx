@@ -70,7 +70,7 @@ function AnswerView({ msg, status }: { msg: ChatMessage; status?: MessageStatus 
 
   if (msg.error) {
     return (
-      <Alert type="error" showIcon message="这次回答失败了" description={msg.error} />
+      <Alert type="error" showIcon title="这次回答失败了" description={msg.error} />
     )
   }
 
@@ -99,68 +99,37 @@ function AnswerView({ msg, status }: { msg: ChatMessage; status?: MessageStatus 
     layerText = '人工坐席回复'
     layerColor = 'green'
   } else if (msg.responseMode === 'handoff') {
-    layerText = '人工接管'
+    layerText = '正在为您转人工'
     layerColor = 'gold'
   } else if (msg.responseMode === 'clarify' && msg.intent === 'order_query') {
-    layerText = '订单工具 · 等待补充订单号'
+    layerText = '请补充订单号'
     layerColor = 'orange'
   } else if (msg.responseMode === 'clarify') {
-    layerText = '意图/知识不足 · 等待澄清'
+    layerText = '请补充信息'
     layerColor = 'orange'
   } else if (msg.toolResults?.length) {
-    layerText = '只读订单工具 · 归属校验'
+    layerText = '订单工具已返回'
     layerColor = 'geekblue'
   } else if (msg.materials?.length || msg.citations?.length) {
-    layerText = '知识库检索 · 引用回答'
+    layerText = '知识库引用回答'
   }
 
   return (
     <div style={{ maxWidth: '100%' }}>
       {layerText ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-          <Tag color={layerColor} bordered={false}>当前链路</Tag>
-          <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>{layerText}</span>
+        <div className="answer-layer-tag">
+          <Tag color={layerColor} variant="filled">{layerText}</Tag>
         </div>
       ) : null}
-      {msg.responseMode === 'manual' && (
-        <Alert
-          className="manual-answer-alert"
-          type="success"
-          showIcon
-          message="人工坐席回复"
-          description="此回复由人工客服接管发出，不经过 AI 检索链路。"
-        />
-      )}
-      {msg.responseMode === 'handoff' && (
-        <Alert
-          className="handoff-answer-alert"
-          type="warning"
-          showIcon
-          message="转人工：已停止自动处理"
-          description={msg.handoffReason ?? '当前问题需要人工客服继续处理，请人工坐席接管。'}
-        />
-      )}
       {msg.responseMode === 'clarify' && (
         <Alert
           className="clarify-answer-alert"
           type="info"
           showIcon
-          message={clarifyTitle}
+          title={clarifyTitle}
           description={clarifyDescription}
         />
       )}
-      {msg.toolResults?.length && msg.responseMode !== 'handoff' ? (
-        <Alert
-          className="tool-result-alert"
-          type="info"
-          showIcon
-          message="只读业务工具已返回"
-          description={
-            msg.toolResults[0].message
-            ?? (msg.toolResults[0].ok ? '查询成功' : '工具未返回可用结果')
-          }
-        />
-      ) : null}
       {/* 正文：Markdown 排版（流式中逐字展示，空文本时思考中） */}
       <div className="rag-answer" style={{ fontSize: 14, lineHeight: 1.75 }}>
         {displayText ? (

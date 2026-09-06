@@ -12,9 +12,11 @@ import type { ChatMessage } from '../lib/chat-provider'
 import { api } from '../lib/api'
 import type { Material } from '../lib/api'
 
+// 运营端布局反转：客户在左（"对方"位置）、运营/AI 回复在右（"自己"位置）。
+// 气泡保持 antd 默认灰色填充，不额外着色。
 const roles: BubbleListProps['role'] = {
   assistant: {
-    placement: 'start',
+    placement: 'end',
     avatar: <Avatar icon={<RobotOutlined />} style={{ background: '#1677ff' }} />,
     variant: 'filled',
     contentRender: (content, info) => (
@@ -22,7 +24,7 @@ const roles: BubbleListProps['role'] = {
     ),
   },
   user: {
-    placement: 'end',
+    placement: 'start',
     avatar: <Avatar icon={<UserOutlined />} style={{ background: '#1677ff' }} />,
     variant: 'filled',
     contentRender: (content) => (content as ChatMessage).text,

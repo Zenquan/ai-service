@@ -66,14 +66,14 @@ export default function ContextPanel({
         </Tooltip>
       </div>
 
-      <Card className="customer-card" bordered={false}>
+      <Card className="customer-card" variant="borderless">
         <div className="customer-card-top">
           <div className="customer-avatar">知</div>
           <div>
             <Typography.Text strong>知识库体验会话</Typography.Text>
             <Typography.Text type="secondary">访客 · 未登录</Typography.Text>
           </div>
-          <Tag color={isHandoff ? 'gold' : 'green'} bordered={false}>{isHandoff ? '待接管' : '在线'}</Tag>
+          <Tag color={isHandoff ? 'gold' : 'green'} variant="filled">{isHandoff ? '待接管' : '在线'}</Tag>
         </div>
         <div className="customer-meta-grid">
           <div><span>会话 ID</span><strong title={conversationId}>{conversationId ? conversationId.replace('web-', '').slice(0, 12) : '创建中'}</strong></div>
@@ -81,7 +81,7 @@ export default function ContextPanel({
         </div>
       </Card>
 
-      <Card className="route-card" bordered={false}>
+      <Card className="route-card" variant="borderless">
         <div className="card-section-heading">
           <span className="section-icon blue"><ThunderboltFilled /></span>
           <div className="card-section-copy">
@@ -96,7 +96,7 @@ export default function ContextPanel({
 
       <div className="context-section-title">
         <span><FileSearchOutlined /> 本轮知识依据</span>
-        {materials.length > 0 ? <Tag bordered={false} color="blue">{materials.length} 条</Tag> : null}
+        {materials.length > 0 ? <Tag variant="filled" color="blue">{materials.length} 条</Tag> : null}
       </div>
       <div className="source-list">
         {materials.length === 0 ? (
@@ -107,7 +107,7 @@ export default function ContextPanel({
         ) : (
           materials.slice(0, 3).map((material, index) => (
             <div className="source-item" key={`${material.doc}:${material.seq}`}>
-              <div className="source-item-top"><Tag bordered={false} color="blue">来源 {index + 1}</Tag><small>#{material.seq + 1}</small></div>
+              <div className="source-item-top"><Tag variant="filled" color="blue">来源 {index + 1}</Tag><small>#{material.seq + 1}</small></div>
               <Typography.Text ellipsis={{ tooltip: material.doc }} strong>{material.doc}</Typography.Text>
               <Typography.Paragraph ellipsis={{ rows: 2 }} type="secondary">{material.text}</Typography.Paragraph>
             </div>
@@ -116,10 +116,10 @@ export default function ContextPanel({
       </div>
 
       {!isHandoff && !needsClarification ? null : (
-        <Card className="handoff-card" bordered={false}>
+        <Card className="handoff-card" variant="borderless">
           <div className="handoff-icon"><TeamOutlined /></div>
           <div className="handoff-copy"><Typography.Text strong>{routeLabel}</Typography.Text><Typography.Text type="secondary">{isHandoff ? handoffReason ?? '当前问题已进入人工处理队列' : '请补充关键信息后继续处理'}</Typography.Text></div>
-          <Tag bordered={false} color={routeColor}>{isHandoff ? '已触发' : '待补充'}</Tag>
+          <Tag variant="filled" color={routeColor}>{isHandoff ? '已触发' : '待补充'}</Tag>
         </Card>
       )}
     </div>
