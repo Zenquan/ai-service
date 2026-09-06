@@ -1,7 +1,7 @@
 [project]
 name = "fastapi-app"
 version = "1.0.0"
-description = "RAG 客服产品：server（FastAPI + RAG Core + LangGraph 编排）+ web（React 客服工作台）"
+description = "AI 智能客服产品：server（FastAPI + RAG Core + LangGraph 编排）+ web（React 客服工作台）"
 readme = "README.md"
 # ⚠️ 锁定 Python 3.12（详见 README「为什么锁 3.12」）：fastembed→onnxruntime
 #   在 macOS x86_64 + 3.13/3.14 下无预编译 wheel，故必须 3.10-3.12，本项目统一用 3.12。

@@ -1,4 +1,4 @@
-# RAG 客服系统 · 单容器部署镜像（CloudBase 云托管 Git 仓库自动部署 / 任意容器平台）
+# AI 智能客服系统 · 单容器部署镜像（CloudBase 云托管 Git 仓库自动部署 / 任意容器平台）
 #
 # CloudBase「通过 Git 仓库部署」会在 master push 后拉取仓库源码，
 # 以仓库根目录为 Docker 构建上下文执行本文件，因此：

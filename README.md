@@ -1,6 +1,16 @@
-# fastapi-app · RAG 客服产品（FastAPI + RAG + LangGraph → Ant Design X）
+<p align="center">
+  <img src="logo.png" width="150" alt="assemble-platform logo" />
+</p>
 
-智能客服系统：文档知识库 + 混合检索问答 + LangGraph 客服编排（意图识别 / 澄清 / 转人工）+ 会话与文档云端持久化。
+<h1 align="center">ai-service · AI 智能客服产品</h1>
+
+<p align="center">
+  智能客服系统：文档知识库 + 混合检索问答 + LangGraph 客服编排（意图识别 / 澄清 / 转人工）+ 会话与文档云端持久化。
+  <br />
+  FastAPI · LangGraph · RAG  · React · Typescript · Ant Design X
+</p>
+
+---
 
 - **后端**：单一 `server` Python 包（src 布局）——FastAPI REST API + RAG Core + LangGraph 客服图 + MySQL 持久化
 - **前端**：Vite + React + TS + **Ant Design X**（Bubble/Sender/Sources）+ antd 知识库面板

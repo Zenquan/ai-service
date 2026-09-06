@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# 一键启动 RAG 客服产品：FastAPI 后端（:8000）+ Vite 前端（:5173）
+# 一键启动 AI 智能客服产品：FastAPI 后端（:8000）+ Vite 前端（:5173）
 # 用法：./scripts/start.sh
 # 可通过环境变量覆盖端口：BACKEND_PORT=8010 FRONTEND_PORT=5174 ./scripts/start.sh
 
