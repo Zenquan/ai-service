@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from server.api import ask, customer_service, docs, health, ingest
+from server.api import ask, auth, customer_service, docs, health, ingest
 from server.core import config as rag_config
 from server.observability import TraceIdMiddleware, setup_logging
 from server.services import rag
@@ -72,6 +72,7 @@ app.add_middleware(
 API_PREFIX = "/api/v1"
 
 app.include_router(health.router, prefix=API_PREFIX, tags=["health"])
+app.include_router(auth.router, prefix=API_PREFIX, tags=["auth"])
 app.include_router(docs.router, prefix=API_PREFIX, tags=["docs"])
 app.include_router(ingest.router, prefix=API_PREFIX, tags=["ingest"])
 app.include_router(ask.router, prefix=API_PREFIX, tags=["ask"])
