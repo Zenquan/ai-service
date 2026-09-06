@@ -27,15 +27,18 @@ class CustomerServiceAgent:
         user_id: str | None = None,
         tenant_id: str | None = None,
         history: list[dict] | None = None,
+        initial_state: dict | None = None,
     ) -> dict:
         messages = list(history or []) + [{"role": "user", "content": query}]
-        return self.graph.invoke({
+        payload = dict(initial_state or {})
+        payload.update({
             "conversation_id": conversation_id,
             "user_id": user_id,
             "tenant_id": tenant_id,
             "current_query": query,
             "messages": messages,
         })
+        return self.graph.invoke(payload)
 
     async def aask(
         self,
@@ -44,15 +47,18 @@ class CustomerServiceAgent:
         user_id: str | None = None,
         tenant_id: str | None = None,
         history: list[dict] | None = None,
+        initial_state: dict | None = None,
     ) -> dict:
         messages = list(history or []) + [{"role": "user", "content": query}]
-        return await self.graph.ainvoke({
+        payload = dict(initial_state or {})
+        payload.update({
             "conversation_id": conversation_id,
             "user_id": user_id,
             "tenant_id": tenant_id,
             "current_query": query,
             "messages": messages,
         })
+        return await self.graph.ainvoke(payload)
 
 
 def create_customer_service_agent(

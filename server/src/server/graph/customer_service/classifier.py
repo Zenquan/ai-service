@@ -33,7 +33,27 @@ def classify_query(query: str) -> dict:
 def classify_intent(state: CustomerServiceState, classifier: Classifier | None = None) -> CustomerServiceState:
     query = state.get("current_query") or state.get("messages", [{}])[-1].get("content", "")
     result = (classifier or classify_query)(query)
+    explicit_intent = result.get("intent")
+    restored_intent = state.get("restored_intent")
+    if (
+        explicit_intent == "knowledge_question"
+        and restored_intent == "order_query"
+        and state.get("restored_needs_clarification")
+    ):
+        # 上轮澄清等待补充业务信息时，本轮短消息（如订单号）不能误判成知识问答。
+        result = {
+            "intent": restored_intent,
+            "intent_confidence": 0.9,
+            "slots": state.get("restored_slots", {}),
+        }
     out = dict(state)
     out.update(result)
     out["current_query"] = query
+    if state.get("restored_needs_clarification") and state.get("restored_slots"):
+        merged = dict(state.get("restored_slots", {}))
+        merged.update(state.get("slots", {}))
+        out["slots"] = merged
+    out["restored_intent"] = None
+    out["restored_needs_clarification"] = False
+    out["restored_slots"] = {}
     return out

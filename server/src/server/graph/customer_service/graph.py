@@ -11,6 +11,8 @@ from server.graph.customer_service.nodes import (
     Retriever,
     clarify,
     compose_answer,
+    execute_order_tool,
+    extract_slots,
     finalize_answer,
     handoff,
     load_session,
@@ -26,9 +28,24 @@ def _after_intent(state: CustomerServiceState) -> str:
         return "retrieve"
     if intent == "greeting":
         return "clarify"
-    if intent in {"order_query", "after_sale", "complaint"}:
+    if intent == "order_query":
+        return "extract_slots"
+    if intent in {"after_sale", "complaint"}:
         return "handoff"
     return "clarify"
+
+
+def _after_extract(state: CustomerServiceState) -> str:
+    """订单槽位齐了走工具，缺单号走澄清（多轮补齐）。"""
+    return "execute_order_tool" if (state.get("slots") or {}).get("order_no") else "clarify"
+
+
+def _after_order_tool(state: CustomerServiceState) -> str:
+    if state.get("needs_human"):
+        return "handoff"
+    if state.get("needs_clarification"):
+        return "clarify"
+    return "finalize"
 
 
 def _after_validation(state: CustomerServiceState) -> str:
@@ -39,8 +56,15 @@ def build_customer_service_graph(
     retriever: Retriever | None = None,
     generator: Generator | None = None,
     classifier: Classifier | None = None,
+    order_tool=None,
 ):
     """构建客服图，依赖全部通过参数注入，方便替换和测试。"""
+    if order_tool is None:
+        from server.tools.orders import query_order_status
+
+        def order_tool(raw_params: dict, requester_user_id: str) -> dict:
+            return query_order_status(raw_params, requester_user_id).to_dict()
+
     graph = StateGraph(CustomerServiceState)
 
     def classify_node(state: CustomerServiceState) -> CustomerServiceState:
@@ -52,11 +76,19 @@ def build_customer_service_graph(
     def compose_node(state: CustomerServiceState) -> CustomerServiceState:
         return compose_answer(state, generator)
 
+    def extract_node(state: CustomerServiceState) -> CustomerServiceState:
+        return extract_slots(state)
+
+    def order_tool_node(state: CustomerServiceState) -> CustomerServiceState:
+        return execute_order_tool(state, order_tool)
+
     graph.add_node("load_session", load_session)
     graph.add_node("classify_intent", classify_node)
     graph.add_node("retrieve", retrieve_node)
     graph.add_node("compose_answer", compose_node)
     graph.add_node("validate_answer", validate_answer)
+    graph.add_node("extract_slots", extract_node)
+    graph.add_node("execute_order_tool", order_tool_node)
     graph.add_node("clarify", clarify)
     graph.add_node("handoff", handoff)
     graph.add_node("finalize", finalize_answer)
@@ -66,7 +98,22 @@ def build_customer_service_graph(
     graph.add_conditional_edges(
         "classify_intent",
         _after_intent,
-        {"retrieve": "retrieve", "clarify": "clarify", "handoff": "handoff"},
+        {
+            "retrieve": "retrieve",
+            "clarify": "clarify",
+            "handoff": "handoff",
+            "extract_slots": "extract_slots",
+        },
+    )
+    graph.add_conditional_edges(
+        "extract_slots",
+        _after_extract,
+        {"execute_order_tool": "execute_order_tool", "clarify": "clarify"},
+    )
+    graph.add_conditional_edges(
+        "execute_order_tool",
+        _after_order_tool,
+        {"handoff": "handoff", "clarify": "clarify", "finalize": "finalize"},
     )
     graph.add_edge("retrieve", "compose_answer")
     graph.add_edge("compose_answer", "validate_answer")

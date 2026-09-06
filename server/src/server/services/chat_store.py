@@ -55,7 +55,12 @@ class ChatStore(ABC):
         """读取会话元数据；不存在返回 None。"""
 
     @abstractmethod
-    def get_or_create_conversation(self, conversation_id: str) -> dict:
+    def get_or_create_conversation(
+        self,
+        conversation_id: str,
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> dict:
         """读取会话，不存在则创建。"""
 
     @abstractmethod
@@ -92,6 +97,7 @@ class MemoryChatStore(ChatStore):
 
     def __init__(self) -> None:
         self._conversations: dict[str, dict] = {}
+        self._checkpoints: dict[str, dict] = {}
         self._lock = threading.Lock()
 
     def get_conversation(self, conversation_id: str) -> dict | None:
@@ -99,15 +105,20 @@ class MemoryChatStore(ChatStore):
             conversation = self._conversations.get(conversation_id)
             return dict(conversation) if conversation else None
 
-    def get_or_create_conversation(self, conversation_id: str) -> dict:
+    def get_or_create_conversation(
+        self,
+        conversation_id: str,
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> dict:
         with self._lock:
             conversation = self._conversations.get(conversation_id)
             if conversation is None:
                 now = _dt_to_iso(_utcnow())
                 conversation = {
                     "id": conversation_id,
-                    "user_id": None,
-                    "tenant_id": None,
+                    "user_id": user_id,
+                    "tenant_id": tenant_id,
                     "status": "open",
                     "handoff_reason": None,
                     "created_at": now,
@@ -162,15 +173,18 @@ class MemoryChatStore(ChatStore):
             ]
 
     def save_checkpoint(self, conversation_id: str, state: dict) -> None:
-        # 内存版不保留快照：每轮通过 messages 重建上下文。
-        return None
+        with self._lock:
+            self._checkpoints[conversation_id] = dict(state)
 
     def load_checkpoint(self, conversation_id: str) -> dict | None:
-        return None
+        with self._lock:
+            checkpoint = self._checkpoints.get(conversation_id)
+            return dict(checkpoint) if checkpoint else None
 
     def clear(self) -> None:
         with self._lock:
             self._conversations.clear()
+            self._checkpoints.clear()
 
 
 def _env_int(name: str, default: int) -> int:
@@ -231,7 +245,12 @@ class MysqlChatStore(ChatStore):
             "updated_at": _dt_to_iso(row["updated_at"]),
         }
 
-    def get_or_create_conversation(self, conversation_id: str) -> dict:
+    def get_or_create_conversation(
+        self,
+        conversation_id: str,
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> dict:
         existing = self.get_conversation(conversation_id)
         if existing:
             return existing
@@ -240,16 +259,17 @@ class MysqlChatStore(ChatStore):
             with self._connect() as conn:
                 with conn.cursor() as cursor:
                     cursor.execute(
-                        "INSERT INTO conversations (id, status, handoff_reason, created_at, updated_at) "
-                        "VALUES (%s, %s, %s, %s, %s)",
-                        (conversation_id, "open", None, now, now),
+                        "INSERT INTO conversations "
+                        "(id, user_id, tenant_id, status, handoff_reason, created_at, updated_at) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                        (conversation_id, user_id, tenant_id, "open", None, now, now),
                     )
         except Exception as exc:  # noqa: BLE001 — pymysql.MySQLError 及其子类
             raise StoreUnavailable(f"MySQL 创建会话失败: {exc}") from exc
         return self.get_conversation(conversation_id)  # type: ignore[return-value]
 
     def update_conversation(self, conversation_id: str, **fields: Any) -> dict | None:
-        allowed = {"status", "handoff_reason", "updated_at"}
+        allowed = {"status", "handoff_reason", "user_id", "tenant_id", "updated_at"}
         updates = {key: value for key, value in fields.items() if key in allowed}
         if not updates:
             return self.get_conversation(conversation_id)

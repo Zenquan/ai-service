@@ -29,7 +29,7 @@ def test_knowledge_question_uses_rag_and_validates_citation():
     assert result["citations"] == [1]
     assert result["conversation_id"] == "c-1"
 
-def test_order_question_is_not_fabricated_as_completed():
+def test_order_question_without_order_no_asks_clarification():
     agent = create_customer_service_agent(
         retriever=_retriever([]),
         generator=_generator("不应调用模型"),
@@ -38,9 +38,49 @@ def test_order_question_is_not_fabricated_as_completed():
     result = agent.ask("帮我查一下订单物流", conversation_id="c-2")
 
     assert result["intent"] == "order_query"
+    assert result["needs_clarification"] is True
+    assert result["response_mode"] == "clarify"
+    assert result["needs_human"] is False
+    assert "订单号" in result["final_answer"]
+
+
+def test_order_question_returns_own_order_without_fabrication():
+    agent = create_customer_service_agent(
+        retriever=_retriever([]),
+        generator=_generator("不应调用模型"),
+    )
+
+    result = agent.ask(
+        "帮我查一下订单 A00001 的物流",
+        conversation_id="c-2",
+        user_id="demo-user",
+    )
+
+    assert result["intent"] == "order_query"
+    assert result["response_mode"] == "answer"
+    assert result["needs_human"] is False
+    assert result["tool_results"][0]["status"] == "ok"
+    assert "运输中" in result["final_answer"]
+    assert "顺丰速运" in result["final_answer"]
+
+
+def test_order_question_denies_other_users_order():
+    agent = create_customer_service_agent(
+        retriever=_retriever([]),
+        generator=_generator("不应调用模型"),
+    )
+
+    result = agent.ask(
+        "查一下 A00001 的物流到哪了",
+        conversation_id="c-2b",
+        user_id="alice",
+    )
+
+    assert result["intent"] == "order_query"
     assert result["needs_human"] is True
-    assert result["handoff_reason"] == "业务工具尚未接入"
-    assert "不能直接查询" in result["final_answer"]
+    assert result["response_mode"] == "handoff"
+    assert result["handoff_reason"] == "非本人订单，权限拒绝"
+    assert "不属于当前会话用户" in result["final_answer"]
 
 def test_low_confidence_request_asks_for_clarification():
     agent = create_customer_service_agent(

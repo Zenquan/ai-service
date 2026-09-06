@@ -39,10 +39,14 @@ class TestMemoryChatStore:
         assert conversation["status"] == "handoff"
         assert conversation["handoff_reason"] == "业务工具尚未接入"
 
-    def test_checkpoint_noop(self):
+    def test_checkpoint_roundtrip(self):
         store = MemoryChatStore()
-        store.save_checkpoint("c-1", {"intent": "greeting"})
-        assert store.load_checkpoint("c-1") is None
+        store.save_checkpoint("c-1", {"intent": "greeting", "slots": {"order_no": "A00001"}})
+        checkpoint = store.load_checkpoint("c-1")
+        assert checkpoint == {"intent": "greeting", "slots": {"order_no": "A00001"}}
+        # 返回副本，外部改动不影响存储
+        checkpoint["intent"] = "order_query"
+        assert store.load_checkpoint("c-1")["intent"] == "greeting"
 
 class TestMysqlChatStoreSelection:
     def test_requires_host(self, monkeypatch):

@@ -14,7 +14,12 @@ class TestStoreFallback:
         service = cs_module.CustomerServiceService()
 
         class BrokenStore(MysqlChatStore):
-            def get_or_create_conversation(self, conversation_id: str) -> dict:
+            def get_or_create_conversation(
+                self,
+                conversation_id: str,
+                user_id: str | None = None,
+                tenant_id: str | None = None,
+            ) -> dict:
                 raise StoreUnavailable("模拟 MySQL 不可达")
 
             def list_messages(self, conversation_id: str) -> list[dict]:

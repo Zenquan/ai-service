@@ -43,3 +43,13 @@ class CustomerServiceState(TypedDict, total=False):
     response_mode: Literal["answer", "clarify", "handoff"]
     rewrites: int
     error: str | None
+    # 澄清与工具闭环（迭代 2）
+    clarify_reason: str | None
+    clarify_answer: str | None
+    handoff_answer_override: str | None
+    tool_calls: list[dict]
+    tool_results: list[dict]
+    # 多轮恢复：上轮 clarify 后，本轮把「待补 intent/slots」带回图里
+    restored_intent: Intent | None
+    restored_slots: dict
+    restored_needs_clarification: bool
