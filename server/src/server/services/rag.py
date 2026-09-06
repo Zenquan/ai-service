@@ -169,6 +169,7 @@ def ask_stream(
       {"event": "materials", "materials": [...]}        # 检索结果（生成前）
       {"event": "token", "text": "..."}                 # 生成 token 增量（多个）
       {"event": "done", "answer", "citations", "citation_valid"}  # 终态
+      {"event": "no_material", "reason", "material_count"}  # 空库/无相关素材（供上层三层路由）
       {"event": "error", "error": "..."}                # 失败（检索空/生成异常）
     """
     try:
@@ -180,17 +181,15 @@ def ask_stream(
         )
     except Exception as exc:  # noqa: BLE001
         if _is_empty_kb_error(str(exc)):
-            # 空库：正常回答流返回友好文案，不报错
-            yield {"event": "token", "text": _EMPTY_KB_ANSWER}
-            yield {"event": "done", "answer": _EMPTY_KB_ANSWER, "citations": [], "citation_valid": True, "material_count": 0}
+            # 空库：交给上层路由（客服层会继续走业务/澄清/人工分支）
+            yield {"event": "no_material", "reason": "empty_kb", "material_count": 0}
             return
         yield {"event": "error", "error": f"检索失败: {exc}"}
         return
 
     if not materials:
-        # 有知识库但没检索到足够相关内容：友好回答流，不报错
-        yield {"event": "token", "text": _NO_MATERIAL_ANSWER}
-        yield {"event": "done", "answer": _NO_MATERIAL_ANSWER, "citations": [], "citation_valid": True, "material_count": 0}
+        # 有知识库但没检索到足够相关内容：交给上层路由澄清/转人工，不再给固定兜底文案。
+        yield {"event": "no_material", "reason": "no_relevant", "material_count": 0}
         return
 
     yield {"event": "materials", "materials": materials}

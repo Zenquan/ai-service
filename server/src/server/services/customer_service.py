@@ -42,7 +42,7 @@ _HANDOFF_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
 # 传给 LangGraph 的图状态快照只保留这些字段（messages 过大不入库，由消息表重建）。
 _CHECKPOINT_FIELDS = ("intent", "intent_confidence", "slots", "citations", "citation_valid",
                       "response_mode", "needs_human", "needs_clarification",
-                      "clarify_reason", "handoff_reason", "tool_calls", "tool_results")
+                      "clarify_reason", "clarify_round", "handoff_reason", "tool_calls", "tool_results")
 
 
 def _now() -> str:
@@ -236,6 +236,93 @@ class CustomerServiceService:
             self._store_failed(exc)
             self._active_store.save_checkpoint(conversation_id, state)
 
+    def _resolve_no_material(
+        self,
+        conversation_id: str,
+        reason: str,
+    ) -> dict:
+        """第三层兜底：知识库无素材时，第一次澄清并给明确去向，第二次仍无解则转人工。"""
+        try:
+            checkpoint = self._active_store.load_checkpoint(conversation_id)
+        except StoreUnavailable as exc:
+            self._store_failed(exc)
+            checkpoint = self._active_store.load_checkpoint(conversation_id)
+        previous_round = int((checkpoint or {}).get("clarify_round") or 0)
+
+        if previous_round >= 1:
+            reason_text = (
+                "知识库还没有文档，连续两轮都无法给出有依据的回答。"
+                if reason == "empty_kb"
+                else "这个问题在知识库中连续两轮没有找到足够相关的资料。"
+            )
+            return {
+                "result": {
+                    "answer": f"{reason_text}我已为您转人工处理，请稍候。",
+                    "materials": [],
+                    "citations": [],
+                    "citation_valid": True,
+                    "response_mode": "handoff",
+                    "needs_human": True,
+                    "needs_clarification": False,
+                    "handoff_reason": "知识库无法回答且澄清无进展",
+                    "intent": "knowledge_question",
+                    "clarify_reason": None,
+                    "tool_results": [],
+                    "tool_calls": [],
+                    "error": None,
+                },
+                "graph_state": {
+                    "intent": "knowledge_question",
+                    "response_mode": "handoff",
+                    "needs_human": True,
+                    "needs_clarification": False,
+                    "handoff_reason": "知识库无法回答且澄清无进展",
+                    "clarify_round": previous_round + 1,
+                    "citations": [],
+                    "citation_valid": True,
+                    "slots": {},
+                },
+            }
+
+        if reason == "empty_kb":
+            clarify_reason = (
+                "知识库还没有文档，暂时无法基于资料回答。"
+                "您可以先上传资料，或直接说“转人工”让客服介入。"
+            )
+        else:
+            clarify_reason = (
+                "这个问题在知识库中没有找到足够相关的资料。"
+                "您可以换个说法、补充具体名称；如果确认需要人工帮助，请直接说“转人工”。"
+            )
+        return {
+            "result": {
+                "answer": clarify_reason,
+                "materials": [],
+                "citations": [],
+                "citation_valid": True,
+                "response_mode": "clarify",
+                "needs_human": False,
+                "needs_clarification": True,
+                "handoff_reason": None,
+                "intent": "knowledge_question",
+                "clarify_reason": clarify_reason,
+                "tool_results": [],
+                "tool_calls": [],
+                "error": None,
+            },
+            "graph_state": {
+                "intent": "knowledge_question",
+                "response_mode": "clarify",
+                "needs_human": False,
+                "needs_clarification": True,
+                "clarify_reason": clarify_reason,
+                "clarify_round": previous_round + 1,
+                "citations": [],
+                "citation_valid": True,
+                "slots": {},
+            },
+        }
+
     def handle_message(
         self,
         conversation_id: str,
@@ -261,6 +348,44 @@ class CustomerServiceService:
                 self._active_store.append_message(conversation_id, user_message)
 
             history = self._history_for_graph(conversation_id)
+
+        if conversation.get("status") in {"handoff", "manual"}:
+            # 人工接管/处理中的会话：客户新消息只入队，不进入 AI 链路。
+            answer = "您的消息已收到，人工坐席会继续为您处理。"
+            try:
+                self._active_store.update_conversation(
+                    conversation_id,
+                    status="handoff",
+                    handoff_reason="客户在人工会话中补充消息",
+                    updated_at=user_message["created_at"],
+                )
+            except StoreUnavailable as exc:
+                self._store_failed(exc)
+                self._active_store.update_conversation(
+                    conversation_id,
+                    status="handoff",
+                    handoff_reason="客户在人工会话中补充消息",
+                    updated_at=user_message["created_at"],
+                )
+            logger.info(
+                "人工会话收到客户新消息 conversation_id=%s message_len=%d",
+                conversation_id,
+                len(message),
+            )
+            return {
+                "conversation_id": conversation_id,
+                "message_id": user_message["id"],
+                "storage": self._storage_mode,
+                "answer": answer,
+                "materials": [],
+                "citations": [],
+                "citation_valid": True,
+                "response_mode": "handoff",
+                "needs_human": True,
+                "needs_clarification": False,
+                "handoff_reason": "客户在人工会话中补充消息",
+                "error": None,
+            }
 
         restore = self._load_graph_restore(conversation_id, message)
         result = self._answer_with_graph(
@@ -430,6 +555,46 @@ class CustomerServiceService:
 
             history = self._history_for_graph(conversation_id)
 
+        if conversation.get("status") in {"handoff", "manual"}:
+            # 人工接管/处理中的会话：客户新消息只入队，不进入 AI 链路（SSE 端用 meta 提示）。
+            answer = "您的消息已收到，人工坐席会继续为您处理。"
+            try:
+                self._active_store.update_conversation(
+                    conversation_id,
+                    status="handoff",
+                    handoff_reason="客户在人工会话中补充消息",
+                    updated_at=user_message["created_at"],
+                )
+            except StoreUnavailable as exc:
+                self._store_failed(exc)
+                self._active_store.update_conversation(
+                    conversation_id,
+                    status="handoff",
+                    handoff_reason="客户在人工会话中补充消息",
+                    updated_at=user_message["created_at"],
+                )
+            logger.info(
+                "人工会话流式收到客户新消息 conversation_id=%s message_len=%d",
+                conversation_id,
+                len(message),
+            )
+            yield {
+                "event": "meta",
+                "response_mode": "handoff",
+                "intent": "unknown",
+                "clarify_reason": None,
+                "needs_human": True,
+                "needs_clarification": False,
+                "handoff_reason": "客户在人工会话中补充消息",
+                "answer": answer,
+                "materials": [],
+                "citations": [],
+                "citation_valid": True,
+                "tool_results": [],
+            }
+            yield {"event": "done", "storage": self._storage_mode}
+            return
+
         restore = self._load_graph_restore(conversation_id, message)
         intent = classify_query(message).get("intent", "unknown")
         if restore is not None and restore.get("restored_intent"):
@@ -509,12 +674,14 @@ class CustomerServiceService:
         handoff_reason = _handoff_reason(message)
         if handoff_reason:
             answer = "当前问题需要人工客服继续处理，我已为您准备转接。"
+            fallback_intent = classify_query(message).get("intent")
             logger.info(
                 "客服转人工 conversation_id=%s reason=%s", conversation_id, handoff_reason
             )
             yield {
                 "event": "meta",
                 "response_mode": "handoff",
+                "intent": fallback_intent,
                 "needs_human": True,
                 "needs_clarification": False,
                 "handoff_reason": handoff_reason,
@@ -538,6 +705,7 @@ class CustomerServiceService:
         materials: list[dict] = []
         final: dict | None = None
         error: str | None = None
+        no_material_reason: str | None = None
         for event in rag.ask_stream(message):
             kind = event.get("event")
             if kind == "materials":
@@ -548,9 +716,56 @@ class CustomerServiceService:
                 yield event
             elif kind == "done":
                 final = event
+            elif kind == "no_material":
+                no_material_reason = event.get("reason", "no_relevant")
+                break
             elif kind == "error":
                 error = event["error"]
                 yield event
+
+        if no_material_reason:
+            resolved = self._resolve_no_material(conversation_id, no_material_reason)
+            result = resolved["result"]
+            graph_state = resolved["graph_state"]
+            self._save_graph_state(conversation_id, graph_state)
+            mode = result["response_mode"]
+            answer = result["answer"]
+            if mode == "handoff":
+                logger.info(
+                    "客服转人工 conversation_id=%s reason=%s",
+                    conversation_id,
+                    result.get("handoff_reason"),
+                )
+            else:
+                logger.info(
+                    "客服澄清 conversation_id=%s reason=%s",
+                    conversation_id,
+                    result.get("clarify_reason"),
+                )
+            yield {
+                "event": "meta",
+                "response_mode": mode,
+                "intent": "knowledge_question",
+                "clarify_reason": result.get("clarify_reason"),
+                "needs_human": result["needs_human"],
+                "needs_clarification": result["needs_clarification"],
+                "handoff_reason": result.get("handoff_reason"),
+                "answer": answer,
+                "materials": [],
+                "citations": [],
+                "citation_valid": True,
+                "tool_results": [],
+            }
+            self._persist_assistant_message(
+                conversation_id,
+                answer,
+                [],
+                mode,
+                result.get("handoff_reason"),
+                [],
+            )
+            yield {"event": "done", "storage": self._storage_mode}
+            return
 
         if error:
             # 生成失败：不落库 assistant 回复，由前端展示错误
@@ -575,6 +790,66 @@ class CustomerServiceService:
             "citations": citations,
             "citation_valid": citation_valid,
             "storage": self._storage_mode,
+        }
+
+    def send_manual_reply(
+        self,
+        conversation_id: str,
+        message: str,
+        agent_name: str = "Zenquan",
+    ) -> dict:
+        """人工坐席回复：仅对已转人工（或已在人工处理中）的会话开放。
+
+        消息以 ``response_mode=manual`` 落库，会话状态更新为 ``manual``，
+        避免与 AI 自动回复混在一起。
+        """
+        logger.info(
+            "人工回复 conversation_id=%s agent=%s message_len=%d",
+            conversation_id,
+            agent_name,
+            len(message),
+        )
+        conversation = self.get_conversation(conversation_id)
+        if conversation.get("status") not in {"handoff", "manual"}:
+            raise ValueError(
+                f"会话当前状态为 {conversation.get('status')}，只有转人工后可人工回复"
+            )
+
+        reply = {
+            "id": str(uuid4()),
+            "role": "assistant",
+            "content": message,
+            "created_at": _now(),
+            "response_mode": "manual",
+            "citations": [],
+            "materials": [],
+            "needs_human": False,
+            "handoff_reason": None,
+        }
+        with self._lock:
+            try:
+                self._active_store.append_message(conversation_id, reply)
+                self._active_store.update_conversation(
+                    conversation_id,
+                    status="manual",
+                    handoff_reason=None,
+                    updated_at=reply["created_at"],
+                )
+            except StoreUnavailable as exc:
+                self._store_failed(exc)
+                self._active_store.append_message(conversation_id, reply)
+                self._active_store.update_conversation(
+                    conversation_id,
+                    status="manual",
+                    handoff_reason=None,
+                    updated_at=reply["created_at"],
+                )
+        return {
+            "conversation_id": conversation_id,
+            "message_id": reply["id"],
+            "storage": self._storage_mode,
+            "response_mode": "manual",
+            "agent_name": agent_name,
         }
 
     def _persist_assistant_message(
