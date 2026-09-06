@@ -23,6 +23,8 @@ dependencies = [
     "pydantic>=2.7",
     # 持久化
     "pymysql>=1.2.0",
+    # 可观测性（客服任务评测指标暴露，Prometheus 文本格式）
+    "prometheus-client>=0.26.0",
 ]
 
 [project.optional-dependencies]

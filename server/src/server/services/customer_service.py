@@ -29,7 +29,7 @@ from server.services.chat_store import (
     build_default_store,
 )
 from server.services.checkpoint_saver import build_checkpointer
-from server.services.metrics import build_default_recorder
+from server.services.metrics import EvaluationRecorder, build_default_recorder
 from server.tools.orders import extract_order_numbers
 
 logger = logging.getLogger(__name__)
@@ -95,6 +95,11 @@ class CustomerServiceService:
     @property
     def storage_mode(self) -> str:
         return self._storage_mode
+
+    @property
+    def recorder(self) -> "EvaluationRecorder":
+        """评测指标埋点器（供 Prometheus 暴露层拉取事件聚合）。"""
+        return self._recorder
 
     @property
     def _active_store(self) -> ChatStore:
