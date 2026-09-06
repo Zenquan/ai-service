@@ -35,6 +35,8 @@ def _get_evaluator() -> PrometheusEvaluator:
 async def metrics() -> PlainTextResponse:
     """返回 Prometheus exposition 文本（cs_eval_* 指标）。"""
     evaluator = _get_evaluator()
+    # 运行期 recorder 可能被替换（测试注入 / 存储回退），每次请求前对齐最新源。
+    evaluator.set_recorder(customer_service.recorder)
     body = evaluator.render()
     return PlainTextResponse(
         content=body,

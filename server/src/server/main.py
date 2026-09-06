@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from server.api import ask, auth, customer_service, docs, health, ingest, metrics
+from server.api import ask, auth, customer_service, docs, health, ingest, metrics, alerts
 from server.core import config as rag_config
 from server.observability import TraceIdMiddleware, setup_logging
 from server.services import rag
@@ -79,6 +79,7 @@ app.include_router(docs.router, prefix=API_PREFIX, tags=["docs"])
 app.include_router(ingest.router, prefix=API_PREFIX, tags=["ingest"])
 app.include_router(ask.router, prefix=API_PREFIX, tags=["ask"])
 app.include_router(customer_service.router, prefix=API_PREFIX, tags=["customer-service"])
+app.include_router(alerts.router, prefix=API_PREFIX, tags=["alerts"])
 # 指标暴露挂在根路径（Prometheus 默认抓 /metrics，不走 /api/v1 前缀）。
 app.include_router(metrics.router, tags=["metrics"])
 

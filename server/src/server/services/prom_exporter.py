@@ -108,6 +108,12 @@ class PrometheusEvaluator:
 
         self._seen = 0  # 已聚合的事件下标，避免重复累加
 
+    def set_recorder(self, recorder: EvaluationRecorder) -> None:
+        """切换数据源（测试 monkeypatch / 运行期替换 recorder 时使用）。"""
+        with self._lock:
+            self._recorder = recorder
+            self._seen = 0  # 换源后游标归零，重新聚合新源事件
+
     def refresh(self) -> None:
         """从 recorder 拉取事件，增量聚合到指标。重复调用幂等（按游标去重）。"""
         events = self._collect_events()

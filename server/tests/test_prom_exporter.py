@@ -86,13 +86,19 @@ def test_no_created_series_by_default():
 
 
 def test_metrics_endpoint_returns_prometheus_text():
-    from server.main import app
+    """用最小 FastAPI app 挂 metrics 路由，避免触发 server.main 的 Qdrant lifespan。"""
+    from fastapi import FastAPI
+
+    from server.api.metrics import router
     from server.services.customer_service import customer_service
 
     rec = _sample_recorder()
     # 直接绑定到单例 recorder，走真实路由
     original = customer_service.recorder
     customer_service._recorder = rec
+
+    app = FastAPI()
+    app.include_router(router)
     try:
         client = TestClient(app)
         resp = client.get("/metrics")

@@ -29,6 +29,7 @@ from server.services.chat_store import (
     build_default_store,
 )
 from server.services.checkpoint_saver import build_checkpointer
+from server.services.alerts import AlertEvaluator, AlertStore, build_default_alert_store
 from server.services.metrics import EvaluationRecorder, build_default_recorder
 from server.tools.orders import extract_order_numbers
 
@@ -91,6 +92,9 @@ class CustomerServiceService:
         self._graph_checked = False
         # 评测指标埋点器：与 chat_store 同款，无 MySQL 回退内存；评测不应阻塞主流程。
         self._recorder = build_default_recorder()
+        # 评测告警：阈值判定 + 落库 + webhook；与 recorder 同源，无 MySQL 回退内存。
+        self._alert_store = build_default_alert_store()
+        self._alert_evaluator = AlertEvaluator(self._recorder, self._alert_store)
 
     @property
     def storage_mode(self) -> str:
@@ -100,6 +104,11 @@ class CustomerServiceService:
     def recorder(self) -> "EvaluationRecorder":
         """评测指标埋点器（供 Prometheus 暴露层拉取事件聚合）。"""
         return self._recorder
+
+    @property
+    def alert_store(self) -> "AlertStore":
+        """告警记录存储（供 /alerts/recent 查询）。"""
+        return self._alert_store
 
     @property
     def _active_store(self) -> ChatStore:
@@ -283,6 +292,11 @@ class CustomerServiceService:
             if message_id:
                 record_payload["message_id"] = message_id
             self._recorder.record_event(record_payload)
+            # 埋点后做一次阈值告警检查（告警失败不阻塞主流程）。
+            try:
+                self._alert_evaluator.check()
+            except Exception:  # noqa: BLE001
+                logger.debug("alert check skipped", exc_info=True)
         except Exception:  # noqa: BLE001
             logger.debug("metrics record skipped", exc_info=True)
 
