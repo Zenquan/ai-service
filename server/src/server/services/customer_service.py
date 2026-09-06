@@ -2,8 +2,10 @@
 
 数据流：
 - 会话与消息落库（MYSQL_HOST 配置且可用时走 MySQL，否则内存回退），服务重启不丢会话。
-- 每轮把最近历史消息（chat_store.HISTORY_LIMIT 条）注入 LangGraph，实现多轮上下文。
-- 图状态快照（意图/槽位/引用）保存到 graph_checkpoints，供后续迭代恢复。
+- 每轮消息交给 LangGraph 客服图；多轮上下文与澄清/转人工中间态由 LangGraph 原生
+  checkpointer（services/checkpoint_saver.py）按 thread_id=conversation_id 持久化，
+  MySQL 可用时跨进程重启恢复，否则回退进程内 InMemorySaver。
+- 知识库「无素材」的澄清轮次计数（clarify_round）仍落 graph_checkpoints（服务层局部状态）。
 
 规则显性化：
 - 响应体带 ``storage`` 字段：mysql=持久化；memory=本地开发内存；memory_fallback=MySQL 不可用回退。
@@ -21,12 +23,12 @@ from uuid import uuid4
 from server.graph.customer_service.classifier import classify_query
 from server.services import rag
 from server.services.chat_store import (
-    HISTORY_LIMIT,
     ChatStore,
     MemoryChatStore,
     StoreUnavailable,
     build_default_store,
 )
+from server.services.checkpoint_saver import build_checkpointer
 from server.tools.orders import extract_order_numbers
 
 logger = logging.getLogger(__name__)
@@ -39,10 +41,8 @@ _HANDOFF_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("业务工具尚未接入", ("订单", "物流", "快递", "配送", "发货", "收货", "退款", "退货", "换货", "售后", "维修")),
 )
 
-# 传给 LangGraph 的图状态快照只保留这些字段（messages 过大不入库，由消息表重建）。
-_CHECKPOINT_FIELDS = ("intent", "intent_confidence", "slots", "citations", "citation_valid",
-                      "response_mode", "needs_human", "needs_clarification",
-                      "clarify_reason", "clarify_round", "handoff_reason", "tool_calls", "tool_results")
+# 传给 LangGraph 的图状态由原生 checkpointer（MysqlCheckpointSaver / InMemorySaver）
+# 以 thread_id=conversation_id 持久化，见 services/checkpoint_saver.py；不再手写快照。
 
 
 def _now() -> str:
@@ -57,28 +57,14 @@ def _handoff_reason(message: str) -> str | None:
     return None
 
 
-def _prepare_checkpoint_restore(checkpoint: dict | None, message: str) -> dict | None:
-    """仅在“确实在补上一轮业务槽位”时恢复图状态，避免把后续新问题锁死在澄清分支。"""
-    if not checkpoint:
-        return None
-    if not (checkpoint.get("response_mode") == "clarify" and checkpoint.get("needs_clarification")):
-        return None
-    restored_intent = checkpoint.get("intent")
-    # 目前只有订单工具需要多轮补槽位：新消息要么仍在问订单，要么提供了订单号候选。
-    if restored_intent != "order_query":
-        return None
-    explicit_intent = classify_query(message).get("intent")
-    continues_order = explicit_intent in {"order_query", "after_sale"} or bool(
-        extract_order_numbers(message)
-    )
-    if not continues_order:
-        return None
-    return {
-        "restored_intent": restored_intent,
-        "restored_slots": dict(checkpoint.get("slots") or {}),
-        "restored_needs_clarification": True,
-        "clarify_reason": checkpoint.get("clarify_reason"),
-    }
+def _use_llm_classifier() -> bool:
+    """是否启用 LLM 意图分类器。
+
+    默认关闭（走确定性规则分类器，保证零外部依赖与稳定契约）；
+    设 ``LLM_CLASSIFIER=1`` 且配置了 ``DEEPSEEK_API_KEY`` 时启用，
+    LLM 不可用会自动回退规则分类器（见 llm_classifier.LLMIntentClassifier）。
+    """
+    return os.getenv("LLM_CLASSIFIER", "").strip() in {"1", "true", "yes", "on"}
 
 
 class CustomerServiceService:
@@ -130,14 +116,6 @@ class CustomerServiceService:
                 conversation["tenant_id"] = tenant_id
         return conversation
 
-    def _load_graph_restore(self, conversation_id: str, message: str) -> dict | None:
-        try:
-            checkpoint = self._active_store.load_checkpoint(conversation_id)
-        except StoreUnavailable as exc:
-            self._store_failed(exc)
-            checkpoint = self._active_store.load_checkpoint(conversation_id)
-        return _prepare_checkpoint_restore(checkpoint, message)
-
     def _effective_user_id(self, conversation: dict, user_id: str | None) -> str:
         """身份优先级：请求显式身份 > 会话归属 > 演示默认。"""
         return user_id or conversation.get("user_id") or DEFAULT_USER_ID
@@ -153,9 +131,18 @@ class CustomerServiceService:
             return self._graph_agent
         self._graph_checked = True
         try:
-            from server.graph.customer_service import create_customer_service_agent
+            from server.graph.customer_service import (
+                build_llm_classifier,
+                create_customer_service_agent,
+            )
 
-            self._graph_agent = create_customer_service_agent()
+            classifier = None
+            if _use_llm_classifier():
+                classifier = build_llm_classifier()
+            self._graph_agent = create_customer_service_agent(
+                classifier=classifier,
+                checkpointer=build_checkpointer(),
+            )
         except (ImportError, ModuleNotFoundError) as exc:
             logger.info("LangGraph agent unavailable; using RAG fallback: %s", exc)
             self._graph_agent = None
@@ -164,42 +151,39 @@ class CustomerServiceService:
             self._graph_agent = None
         return self._graph_agent
 
-    def _history_for_graph(self, conversation_id: str) -> list[dict]:
-        """最近 HISTORY_LIMIT 条消息，转成 LangGraph 的 messages 列表（role/content）。"""
-        try:
-            messages = self._active_store.list_messages(conversation_id)
-        except StoreUnavailable as exc:
-            self._store_failed(exc)
-            messages = self._active_store.list_messages(conversation_id)
-        return [
-            {"role": message["role"], "content": message["content"]}
-            for message in messages[-HISTORY_LIMIT:]
-        ]
+    def _graph_mid_clarify(self, conversation_id: str, message: str) -> bool:
+        """会话是否处于「订单澄清待补充」且本轮消息确实在延续该澄清。
+
+        仅当上一轮为订单澄清（intent=order_query + needs_clarification）且本轮仍在补订单
+        信息（含订单关键词或订单号候选）时返回 True，避免把后续新问题锁进订单/检索链路。
+        """
+        agent = self._get_graph_agent()
+        if agent is None:
+            return False
+        state = agent.get_state(conversation_id)
+        if not (state and state.get("intent") == "order_query" and state.get("needs_clarification")):
+            return False
+        explicit_intent = classify_query(message).get("intent")
+        return explicit_intent in {"order_query", "after_sale"} or bool(
+            extract_order_numbers(message)
+        )
 
     def _answer_with_graph(
         self,
         conversation_id: str,
         message: str,
-        history: list[dict],
         user_id: str | None = None,
         tenant_id: str | None = None,
-        initial_state: dict | None = None,
     ) -> dict | None:
         agent = self._get_graph_agent()
         if agent is None:
             return None
-        # 历史里已包含本轮 user 消息时去掉尾部，agent.ask 会再补一次当前消息，避免重复。
-        recent_history = list(history)
-        if recent_history and recent_history[-1].get("content") == message:
-            recent_history = recent_history[:-1]
         try:
             state = agent.ask(
                 message,
                 conversation_id=conversation_id,
                 user_id=user_id,
                 tenant_id=tenant_id,
-                history=recent_history,
-                initial_state=initial_state,
             )
         except Exception:
             logger.exception("LangGraph agent request failed; using RAG fallback")
@@ -220,11 +204,6 @@ class CustomerServiceService:
             "tool_results": state.get("tool_results", []),
             "tool_calls": state.get("tool_calls", []),
             "error": state.get("error"),
-            "_graph_state": {
-                key: state[key]
-                for key in _CHECKPOINT_FIELDS
-                if key in state
-            },
         }
 
     def _save_graph_state(self, conversation_id: str, state: dict) -> None:
@@ -347,8 +326,6 @@ class CustomerServiceService:
                 self._store_failed(exc)
                 self._active_store.append_message(conversation_id, user_message)
 
-            history = self._history_for_graph(conversation_id)
-
         if conversation.get("status") in {"handoff", "manual"}:
             # 人工接管/处理中的会话：客户新消息只入队，不进入 AI 链路。
             answer = "您的消息已收到，人工坐席会继续为您处理。"
@@ -387,14 +364,11 @@ class CustomerServiceService:
                 "error": None,
             }
 
-        restore = self._load_graph_restore(conversation_id, message)
         result = self._answer_with_graph(
             conversation_id,
             message,
-            history,
             user_id=effective_user_id,
             tenant_id=tenant_id,
-            initial_state=restore,
         )
         if result is None:
             # LangGraph 不可用时保留安全降级：投诉/售后/订单请求直接转人工，知识问答走 RAG。
@@ -410,7 +384,6 @@ class CustomerServiceService:
                     "needs_clarification": False,
                     "handoff_reason": handoff_reason,
                     "error": None,
-                    "_graph_state": None,
                 }
             else:
                 rag_result = rag.ask(message)
@@ -426,10 +399,8 @@ class CustomerServiceService:
                     "needs_clarification": not answer and not error,
                     "handoff_reason": "知识库服务暂时不可用" if error else "知识库未返回可用回答" if not answer else None,
                     "error": error,
-                    "_graph_state": None,
                 }
 
-        graph_state = result.pop("_graph_state", None)
         logger.info(
             "客服回复完成 conversation_id=%s response_mode=%s answer_len=%d handoff_reason=%s",
             conversation_id,
@@ -460,8 +431,6 @@ class CustomerServiceService:
                     handoff_reason=result.get("handoff_reason"),
                     updated_at=assistant_message["created_at"],
                 )
-                if graph_state is not None:
-                    self._save_graph_state(conversation_id, graph_state)
             except StoreUnavailable as exc:
                 self._store_failed(exc)
                 self._active_store.append_message(conversation_id, assistant_message)
@@ -471,8 +440,6 @@ class CustomerServiceService:
                     handoff_reason=result.get("handoff_reason"),
                     updated_at=assistant_message["created_at"],
                 )
-                if graph_state is not None:
-                    self._save_graph_state(conversation_id, graph_state)
 
         return {
             "conversation_id": conversation_id,
@@ -553,8 +520,6 @@ class CustomerServiceService:
                 self._store_failed(exc)
                 self._active_store.append_message(conversation_id, user_message)
 
-            history = self._history_for_graph(conversation_id)
-
         if conversation.get("status") in {"handoff", "manual"}:
             # 人工接管/处理中的会话：客户新消息只入队，不进入 AI 链路（SSE 端用 meta 提示）。
             answer = "您的消息已收到，人工坐席会继续为您处理。"
@@ -595,12 +560,12 @@ class CustomerServiceService:
             yield {"event": "done", "storage": self._storage_mode}
             return
 
-        restore = self._load_graph_restore(conversation_id, message)
+        mid_clarify = self._graph_mid_clarify(conversation_id, message)
         intent = classify_query(message).get("intent", "unknown")
-        if restore is not None and restore.get("restored_intent"):
-            intent = restore["restored_intent"]
+        if mid_clarify:
+            intent = "order_query"
         use_graph = self._get_graph_agent() is not None and (
-            restore is not None or intent != "knowledge_question"
+            mid_clarify or intent != "knowledge_question"
         )
 
         if use_graph:
@@ -614,15 +579,10 @@ class CustomerServiceService:
             result = self._answer_with_graph(
                 conversation_id,
                 message,
-                history,
                 user_id=effective_user_id,
                 tenant_id=tenant_id,
-                initial_state=restore,
             )
             if result is not None:
-                graph_state = result.pop("_graph_state", None)
-                if graph_state is not None:
-                    self._save_graph_state(conversation_id, graph_state)
                 mode = result["response_mode"]
                 answer = result["answer"]
                 citations = result["citations"]
@@ -636,7 +596,7 @@ class CustomerServiceService:
                     logger.info(
                         "客服澄清 conversation_id=%s intent=%s",
                         conversation_id,
-                        graph_state.get("intent") if graph_state else intent,
+                        result.get("intent") or intent,
                     )
                 yield {
                     "event": "meta",

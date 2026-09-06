@@ -61,8 +61,14 @@ def build_customer_service_graph(
     generator: Generator | None = None,
     classifier: Classifier | None = None,
     order_tool=None,
+    checkpointer=None,
 ):
-    """构建客服图，依赖全部通过参数注入，方便替换和测试。"""
+    """构建客服图，依赖全部通过参数注入，方便替换和测试。
+
+    ``checkpointer``：LangGraph 原生 checkpointer（如 ``MysqlCheckpointSaver``），
+    用于澄清/转人工中间态跨进程重启恢复；传入则按 ``thread_id``（conversation_id）
+    持久化，不传则无持久化。
+    """
     if order_tool is None:
         from server.tools.orders import query_order_status
 
@@ -129,4 +135,4 @@ def build_customer_service_graph(
     graph.add_edge("clarify", END)
     graph.add_edge("handoff", END)
     graph.add_edge("finalize", END)
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)

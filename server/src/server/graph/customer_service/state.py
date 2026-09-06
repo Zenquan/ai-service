@@ -1,4 +1,11 @@
-"""客服流程的状态契约。"""
+"""客服流程的状态契约。
+
+跨轮恢复语义（LangGraph 原生 checkpoint，见 services/checkpoint_saver.py）：
+- ``messages`` 用 ``add_messages`` reducer 跨轮累加对话历史；
+- ``intent`` / ``slots`` / ``needs_clarification`` 作为「会话级恢复信号」跨轮携带，
+  由 ``classify_intent`` 决定是否延续上一轮的订单澄清；
+- 其余字段（answer/citations/handoff 等）每轮由 ``load_session`` 重置，避免残留污染。
+"""
 from __future__ import annotations
 
 from typing import Annotated, Literal, TypedDict
@@ -15,14 +22,6 @@ Intent = Literal[
 ]
 
 
-def _merge_unique(left: list | None, right: list | None) -> list:
-    values: list = []
-    for value in (left or []) + (right or []):
-        if value not in values:
-            values.append(value)
-    return values
-
-
 class CustomerServiceState(TypedDict, total=False):
     conversation_id: str
     user_id: str | None
@@ -33,7 +32,8 @@ class CustomerServiceState(TypedDict, total=False):
     intent_confidence: float
     slots: dict
     contexts: list[dict]
-    citations: Annotated[list[int], _merge_unique]
+    # 引用列表每轮由 validate_answer / execute_order_tool 赋值覆盖，不跨轮累加。
+    citations: list[int]
     citation_valid: bool
     answer: str
     final_answer: str
@@ -49,7 +49,3 @@ class CustomerServiceState(TypedDict, total=False):
     handoff_answer_override: str | None
     tool_calls: list[dict]
     tool_results: list[dict]
-    # 多轮恢复：上轮 clarify 后，本轮把「待补 intent/slots」带回图里
-    restored_intent: Intent | None
-    restored_slots: dict
-    restored_needs_clarification: bool

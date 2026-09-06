@@ -13,18 +13,27 @@ OrderTool = Callable[..., dict]
 
 
 def load_session(state: CustomerServiceState) -> CustomerServiceState:
-    """初始化图状态；正式环境由 checkpoint/session repository 提供历史。"""
+    """初始化每轮状态：重置临时字段，保留会话级恢复信号。
+
+    恢复信号（intent / slots / needs_clarification）由 checkpointer 跨轮携带，
+    供 classify_intent 决定是否延续上一轮的订单澄清；其余字段每轮归零，
+    避免上轮 answer/citations/handoff 残留污染本轮。
+    """
     out = dict(state)
-    out.setdefault("contexts", [])
-    out.setdefault("citations", [])
-    out.setdefault("rewrites", 0)
-    out.setdefault("needs_human", False)
-    out.setdefault("needs_clarification", False)
-    out.setdefault("slots", {})
-    out.setdefault("clarify_reason", None)
-    out.setdefault("tool_calls", [])
-    out.setdefault("tool_results", [])
-    out.setdefault("restored_slots", {})
+    out["contexts"] = []
+    out["citations"] = []
+    out["rewrites"] = 0
+    out["answer"] = ""
+    out["final_answer"] = ""
+    out["needs_human"] = False
+    out["handoff_reason"] = None
+    out["response_mode"] = "answer"
+    out["clarify_reason"] = None
+    out["clarify_answer"] = None
+    out["handoff_answer_override"] = None
+    out["tool_calls"] = []
+    out["tool_results"] = []
+    out["error"] = None
     return out
 
 
