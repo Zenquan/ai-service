@@ -76,6 +76,7 @@ textarea:focus-visible {
   height: 68px;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 0 28px;
   gap: 42px;
   background: var(--surface);
@@ -181,6 +182,24 @@ textarea:focus-visible {
 
 .operator {
   gap: 9px;
+}
+
+/* 用户块作为可点击菜单触发器（button 重置，去掉原生按钮外观） */
+button.operator {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+button.operator:focus-visible {
+  outline: 2px solid var(--brand, #2563eb);
+  outline-offset: 2px;
 }
 
 .operator-avatar {
@@ -1241,6 +1260,21 @@ textarea:focus-visible {
   margin: 0 0 8px;
 }
 
+/* 消息气泡角色标签（头像栏上方） */
+.bubble-role-label {
+  display: block;
+  margin: 0 0 3px 4px;
+  color: #9aa7b9;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.bubble-role-label-end {
+  margin: 0 4px 3px 0;
+  text-align: right;
+}
+
 .handoff-answer-alert,
 .clarify-answer-alert {
   margin-bottom: 12px;
@@ -1472,4 +1506,125 @@ textarea:focus-visible {
   flex: 1;
   min-height: 0;
   padding: 0 max(16px, calc((100vw - 760px) / 2));
+}
+
+/* ====================================================================
+ * 客户聊天窗（mobile 优化）
+ * 解决手机端 header 被压扁：覆盖 min-width 1040px 限制（去掉横向溢出）、
+ * 合并角色 tag 与用户名信息块、紧凑化品牌区、退出按钮只保留图标。
+ * 全部用 CSS 兜底，不动 JSX 结构（保证登录态逻辑稳定）。
+ * ==================================================================== */
+@media (max-width: 620px) {
+  /* 覆盖 .support-app { min-width: 1040px }，否则手机会横向溢出滚动 */
+  .customer-app.support-app {
+    min-width: 0;
+  }
+
+  .customer-app .support-header {
+    height: auto;
+    min-height: 56px;
+    padding: 8px 14px;
+    gap: 10px;
+  }
+
+  .customer-app .brand-lockup {
+    min-width: 0;
+    flex: 1;
+    gap: 9px;
+  }
+
+  .customer-app .brand-mark {
+    width: 30px;
+    height: 30px;
+  }
+
+  .customer-app .brand-lockup strong {
+    font-size: 13px;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* 隐藏 "CUSTOMER SERVICE" 副标题，节省纵向空间 */
+  .customer-app .brand-lockup span {
+    display: none;
+  }
+
+  .customer-app .header-actions {
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .customer-app .header-divider {
+    display: none;
+  }
+
+  /* 角色 tag 与 operator 块信息重复，移动端隐藏 tag（用户已登录，自己知道角色） */
+  .customer-app .header-actions .ant-tag {
+    display: none;
+  }
+
+  .customer-app .operator-avatar {
+    width: 28px;
+    height: 28px;
+    font-size: 12px;
+  }
+
+  .customer-app .operator {
+    gap: 6px;
+    max-width: 140px;
+  }
+
+  .customer-app .operator strong {
+    font-size: 12px;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100px;
+  }
+
+  /* 用户名小字继续隐藏（与全局 620px 规则保持一致） */
+  .customer-app .operator small {
+    display: none;
+  }
+
+  /* 移动端退出入口移到用户菜单（点击头像/用户名弹出），隐藏独立退出按钮 */
+  .customer-app .logout-button {
+    display: none;
+  }
+
+  /* 内容区与全局 620px 同步，但稍紧（14px 而非 16px） */
+  .customer-app .chat-toolbar {
+    box-sizing: border-box;
+    height: auto;
+    min-height: 60px;
+    padding: 8px 14px;
+  }
+
+  .customer-app .chat-policy-bar {
+    padding: 0 14px;
+  }
+
+  .customer-app .chat-empty-state {
+    padding: 22px 14px 24px;
+  }
+
+  .customer-app .chat-empty-state .ant-typography-title {
+    font-size: 19px;
+  }
+
+  .customer-app .chat-empty-state > .ant-typography:not(.ant-typography-title) {
+    font-size: 12px;
+    line-height: 1.7;
+  }
+
+  .customer-app .chat-message-area {
+    padding: 16px 14px;
+  }
+
+  .customer-app .chat-composer {
+    padding: 0 14px 12px;
+  }
 }
