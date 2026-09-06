@@ -3,6 +3,7 @@
 import { DefaultChatProvider, XRequest } from '@ant-design/x-sdk'
 import type { SSEOutput } from '@ant-design/x-sdk'
 import type { Material, ToolResultRecord } from './api'
+import { getAuthToken } from './auth'
 
 /** 一条聊天消息：用户问题 or AI 回答（含引用素材） */
 export interface ChatMessage {
@@ -17,10 +18,16 @@ export interface ChatMessage {
   citationValid?: boolean
   /** 错误信息（检索/生成失败时） */
   error?: string
-  responseMode?: 'answer' | 'clarify' | 'handoff'
+  responseMode?: 'answer' | 'clarify' | 'handoff' | 'manual'
   needsHuman?: boolean
   needsClarification?: boolean
   handoffReason?: string | null
+  /** 服务端识别出的意图 */
+  intent?: 'greeting' | 'knowledge_question' | 'order_query' | 'after_sale' | 'complaint' | 'unknown'
+  /** 澄清原因，用于给用户具体下一步 */
+  clarifyReason?: string
+  /** 流式过程中的阶段文案（正在检索/正在查询工具），不进入最终正文 */
+  progressLabel?: string
   /** 图内工具执行结果（只读订单等） */
   toolResults?: ToolResultRecord[]
 }
@@ -61,13 +68,18 @@ export const ragProvider = new DefaultChatProvider<ChatMessage, AskInput, AskOut
 })
 
 export function createCustomerServiceProvider(conversationId: string) {
+  const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
+  const token = getAuthToken()
+  if (token) {
+    authHeaders.Authorization = `Bearer ${token}`
+  }
   const provider = new DefaultChatProvider<ChatMessage, CustomerMessageInput, SSEOutput>({
     request: XRequest<CustomerMessageInput, SSEOutput>(
       `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages/stream`,
       {
         manual: true,
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
       },
     ),
   })
@@ -104,7 +116,7 @@ export function createCustomerServiceProvider(conversationId: string) {
       case 'materials':
         return { ...base, materials: (data.materials as Material[]) ?? [], text: base.text ?? '' }
       case 'token':
-        return { ...base, text: `${base.text ?? ''}${data.text ?? ''}` }
+        return { ...base, text: `${base.text ?? ''}${data.text ?? ''}`, progressLabel: undefined }
       case 'done':
         if (data.error) {
           return { ...base, error: data.error as string }
@@ -127,13 +139,16 @@ export function createCustomerServiceProvider(conversationId: string) {
           needsHuman: !!data.needs_human,
           needsClarification: !!data.needs_clarification,
           handoffReason: (data.handoff_reason as string) ?? null,
+          intent: data.intent as ChatMessage['intent'],
+          clarifyReason: (data.clarify_reason as string) ?? undefined,
           toolResults: (data.tool_results as ToolResultRecord[]) ?? [],
         }
       case 'progress':
-        // 图内工具执行中的可见状态（如“正在查询订单与物流…”）
+        // 图内工具/检索执行中的可见状态，只展示不拼进最终正文
         return {
           ...base,
-          text: (data.label as string) ?? base.text,
+          text: base.text ?? '',
+          progressLabel: (data.label as string) ?? undefined,
         }
       case 'error':
         return { ...base, error: (data.error as string) ?? '未知错误' }

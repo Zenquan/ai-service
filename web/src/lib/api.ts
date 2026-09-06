@@ -1,5 +1,19 @@
 /** 后端 API 类型 + 客户端（FastAPI: app.main — /api/v1 前缀） */
 
+import { getAuthToken } from './auth'
+
+export interface AuthUserInfo {
+  id: string
+  username: string
+  role: 'operator' | 'customer'
+  display_name: string
+}
+
+export interface LoginResult {
+  token: string
+  user: AuthUserInfo
+}
+
 export interface Health {
   status: string
   docs: number
@@ -61,6 +75,14 @@ export interface CustomerMessageResult {
   storage: 'mysql' | 'memory' | 'memory_fallback'
 }
 
+export interface ManualReplyResult {
+  conversation_id: string
+  message_id: string
+  storage: 'mysql' | 'memory' | 'memory_fallback'
+  response_mode: 'manual'
+  agent_name: string
+}
+
 /** 业务工具统一返回（迭代 2 只读订单工具） */
 export interface ToolResultRecord {
   tool: string
@@ -81,7 +103,7 @@ export interface ToolResultRecord {
 
 export interface ConversationSummary {
   id: string
-  status: 'open' | 'handoff' | 'waiting'
+  status: 'open' | 'handoff' | 'waiting' | 'manual'
   handoff_reason: string | null
   created_at: string
   updated_at: string
@@ -94,7 +116,7 @@ export interface ConversationMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
-  response_mode: 'answer' | 'clarify' | 'handoff' | null
+  response_mode: 'answer' | 'clarify' | 'handoff' | 'manual' | null
   citations: number[] | null
   materials: Material[] | null
   needs_human: boolean
@@ -103,7 +125,12 @@ export interface ConversationMessage {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const resp = await fetch(path, init)
+  const headers = new Headers(init?.headers)
+  const token = getAuthToken()
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`)
+  }
+  const resp = await fetch(path, { ...init, headers })
   if (!resp.ok) {
     let detail = `${resp.status} ${resp.statusText}`
     try {
@@ -118,6 +145,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  login: (username: string, password: string) =>
+    request<LoginResult>('/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    }),
+
+  me: () => request<AuthUserInfo>('/api/v1/auth/me'),
+
   health: () => request<Health>('/api/v1/health'),
 
   docs: () => request<DocItem[]>('/api/v1/docs'),
@@ -153,5 +189,15 @@ export const api = {
   conversationMessages: (conversationId: string) =>
     request<ConversationMessage[]>(
       `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`,
+    ),
+
+  sendManualReply: (conversationId: string, message: string, agentName = 'Zenquan') =>
+    request<ManualReplyResult>(
+      `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages/manual`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, agent_name: agentName }),
+      },
     ),
 }

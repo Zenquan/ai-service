@@ -1,14 +1,18 @@
 /** 智应客服中心：会话队列 + AI 对话 + 实时上下文。 */
 
 import { useCallback, useEffect, useState } from 'react'
-import { App as AntApp, Modal, Tooltip } from 'antd'
+import { App as AntApp, Button, Modal, Tooltip } from 'antd'
 import { XProvider } from '@ant-design/x'
 import ChatPanel from './components/ChatPanel'
 import ContextPanel from './components/ContextPanel'
 import ConversationSidebar from './components/ConversationSidebar'
+import CustomerChat from './components/CustomerChat'
 import KnowledgePanel from './components/KnowledgePanel'
+import LoginPage from './components/LoginPage'
 import { api } from './lib/api'
 import type { ConversationSummary, Material } from './lib/api'
+import { clearAuth, getAuthUser } from './lib/auth'
+import type { AuthUser } from './lib/auth'
 import type { ChatMessage } from './lib/chat-provider'
 
 const themeConfig = {
@@ -22,6 +26,7 @@ const themeConfig = {
 }
 
 export default function App() {
+  const [authUser, setAuthUser] = useState<AuthUser | null>(() => getAuthUser())
   const [knowledgeOpen, setKnowledgeOpen] = useState(false)
   const [conversationVersion, setConversationVersion] = useState(0)
   const [materials, setMaterials] = useState<Material[]>([])
@@ -34,6 +39,7 @@ export default function App() {
     needsHuman: boolean
     needsClarification: boolean
     handoffReason: string | null
+    intent?: ChatMessage['intent']
   }>({ conversationId: '', responseMode: undefined, needsHuman: false, needsClarification: false, handoffReason: null })
 
   // 刷新会话列表（挂载 + 每条消息发送后）
@@ -47,6 +53,13 @@ export default function App() {
     refreshConversations()
   }, [refreshConversations])
 
+  // 运营端轮询：客户新会话/人工队列变化时侧栏自动更新。
+  useEffect(() => {
+    if (authUser?.role !== 'operator') return
+    const timer = window.setInterval(refreshConversations, 5000)
+    return () => window.clearInterval(timer)
+  }, [authUser?.role, refreshConversations])
+
   // 稳定引用：ChatPanel 的 useEffect 依赖它，inline 函数会导致每次 render 都触发 effect
   // 从而 setConversationState → App re-render → 新 inline 引用 → effect 再触发 → 无限循环请求
   const handleConversationStateChange = useCallback(
@@ -56,12 +69,34 @@ export default function App() {
       needsHuman: boolean
       needsClarification: boolean
       handoffReason: string | null
+      intent?: ChatMessage['intent']
     }) => {
       setConversationState(state)
       refreshConversations()
     },
     [refreshConversations],
   )
+
+  const handleLogout = () => {
+    clearAuth()
+    setAuthUser(null)
+  }
+
+  if (!authUser) {
+    return (
+      <XProvider theme={themeConfig}>
+        <AntApp><LoginPage onLogin={setAuthUser} /></AntApp>
+      </XProvider>
+    )
+  }
+
+  if (authUser.role === 'customer') {
+    return (
+      <XProvider theme={themeConfig}>
+        <AntApp><CustomerChat user={authUser} onLogout={handleLogout} /></AntApp>
+      </XProvider>
+    )
+  }
 
   return (
     <XProvider theme={themeConfig}>
@@ -76,7 +111,8 @@ export default function App() {
             <div className="header-actions">
               <Tooltip title="后端、检索与生成服务均在线"><span className="system-health"><i /> 系统在线</span></Tooltip>
               <span className="header-divider" />
-              <div className="operator"><span className="operator-avatar">Z</span><span><strong>Zenquan</strong><small>客服运营</small></span></div>
+              <div className="operator"><span className="operator-avatar">Z</span><span><strong>{authUser.display_name}</strong><small>客服运营</small></span></div>
+              <Button className="logout-button" type="text" onClick={handleLogout}>退出</Button>
             </div>
           </header>
 
@@ -88,14 +124,22 @@ export default function App() {
                 onSelect={(conversationId) => {
                   setActiveConversationId(conversationId)
                   setMaterials([])
-                  setConversationState({ conversationId, responseMode: undefined, needsHuman: false, needsClarification: false, handoffReason: null })
+                  setConversationState({ conversationId, responseMode: undefined, needsHuman: false, needsClarification: false, handoffReason: null, intent: undefined })
                 }}
-                currentStatus={conversationState.needsHuman ? 'handoff' : conversationState.needsClarification ? 'waiting' : 'active'}
+                currentStatus={
+                  conversationState.responseMode === 'manual'
+                    ? 'manual'
+                    : conversationState.needsHuman || conversationState.responseMode === 'handoff'
+                      ? 'handoff'
+                      : conversationState.needsClarification
+                        ? 'waiting'
+                        : 'active'
+                }
                 onNewConversation={() => {
                   setActiveConversationId(null)
                   setConversationVersion((value) => value + 1)
                   setMaterials([])
-                  setConversationState({ conversationId: '', responseMode: undefined, needsHuman: false, needsClarification: false, handoffReason: null })
+                  setConversationState({ conversationId: '', responseMode: undefined, needsHuman: false, needsClarification: false, handoffReason: null, intent: undefined })
                 }}
                 onOpenKnowledge={() => setKnowledgeOpen(true)}
               />

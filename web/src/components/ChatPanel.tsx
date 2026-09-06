@@ -12,29 +12,6 @@ import type { ChatMessage } from '../lib/chat-provider'
 import { api } from '../lib/api'
 import type { Material } from '../lib/api'
 
-const SUGGESTIONS = [
-  {
-    layer: '① 知识问答',
-    label: '什么是 AI Agent？',
-    description: '自动检索资料 → 引用回答',
-  },
-  {
-    layer: '② 订单工具',
-    label: '我的订单 A00001 到哪了？',
-    description: '归属校验 → 只读返回物流',
-  },
-  {
-    layer: '② 缺单号时',
-    label: '我的订单到哪了？',
-    description: '先澄清索要订单号，再继续查',
-  },
-  {
-    layer: '③ 售后/人工',
-    label: '我要投诉，转人工',
-    description: '高风险请求 → 人工接管',
-  },
-]
-
 const roles: BubbleListProps['role'] = {
   assistant: {
     placement: 'start',
@@ -65,15 +42,17 @@ export default function ChatPanel({
     needsHuman: boolean
     needsClarification: boolean
     handoffReason: string | null
+    intent?: ChatMessage['intent']
   }) => void
 }) {
   const [input, setInput] = useState('')
+  const [manualSending, setManualSending] = useState(false)
   // 会话 id：外部传入（选中历史会话 / 新建会话）优先；否则每次新建随机 id
   const [randomId] = useState(() => `web-${crypto.randomUUID()}`)
   const conversationId = propConversationId || randomId
   const customerProvider = useMemo(() => createCustomerServiceProvider(conversationId), [conversationId])
 
-  const { messages, setMessages, onRequest, isRequesting, abort } = useXChat({
+  const { messages, setMessages, isRequesting, abort } = useXChat({
     provider: customerProvider,
     requestPlaceholder: { role: 'assistant', text: '正在检索并按资料回答…' },
     requestFallback: (_, { error }) => ({
@@ -132,26 +111,88 @@ export default function ChatPanel({
     [messages],
   )
 
-  const handleSend = (val: string) => {
-    if (!val.trim() || isRequesting) return
+  const latestAssistant = useMemo(() => {
+    const found = [...messages].reverse().find(({ message }) => message.role === 'assistant')
+    return found?.message as ChatMessage | undefined
+  }, [messages])
+  const manualMode = latestAssistant?.responseMode === 'handoff' || latestAssistant?.responseMode === 'manual'
+
+  // 人工接管期间轮询：客户在另一端补充消息时，运营端自动更新。
+  useEffect(() => {
+    if (!manualMode || !conversationId) return
+    const timer = window.setInterval(() => {
+      api.conversationMessages(conversationId)
+        .then((history) => {
+          setMessages(history.map((msg, index) => ({
+            id: `history-${conversationId}-${index}`,
+            message: {
+              role: msg.role,
+              text: msg.content,
+              materials: msg.materials ?? [],
+              citations: msg.citations ?? [],
+              citationValid: true,
+              responseMode: msg.response_mode ?? undefined,
+              needsHuman: msg.needs_human,
+              handoffReason: msg.handoff_reason,
+            } as ChatMessage,
+            status: 'success' as const,
+          })))
+        })
+        .catch(() => { /* 轮询失败保持现状 */ })
+    }, 4000)
+    return () => window.clearInterval(timer)
+  }, [conversationId, manualMode, setMessages])
+
+  const handleSend = async (val: string) => {
+    if (!val.trim() || isRequesting || manualSending || !manualMode) return
+    const text = val.trim()
     setInput('')
-    onRequest({ message: val.trim() })
+    setManualSending(true)
+    try {
+      await api.sendManualReply(conversationId, text)
+      const manualMessage: ChatMessage = {
+        role: 'assistant',
+        text,
+        responseMode: 'manual',
+        materials: [],
+        citations: [],
+        citationValid: true,
+      }
+      setMessages((current) => [
+        ...current,
+        { id: `manual-${crypto.randomUUID()}`, message: manualMessage, status: 'success' as const },
+      ])
+    } catch (error) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: `manual-error-${crypto.randomUUID()}`,
+          message: {
+            role: 'assistant',
+            text: '',
+            error: `人工回复失败：${(error as Error).message ?? '未知错误'}`,
+          },
+          status: 'error' as const,
+        },
+      ])
+    } finally {
+      setManualSending(false)
+    }
   }
 
   const isEmpty = messages.length === 0 && !isRequesting
 
   useEffect(() => {
-    const latest = [...messages].reverse().find(({ message }) => message.role === 'assistant')
-    const latestMessage = latest?.message as ChatMessage | undefined
-    onMaterialsChange?.(latestMessage?.materials ?? [])
+    onMaterialsChange?.(latestAssistant?.materials ?? [])
     onConversationStateChange?.({
       conversationId,
-      responseMode: latestMessage?.responseMode,
-      needsHuman: latestMessage?.needsHuman ?? false,
-      needsClarification: latestMessage?.needsClarification ?? false,
-      handoffReason: latestMessage?.handoffReason ?? null,
+      responseMode: latestAssistant?.responseMode,
+      needsHuman: latestAssistant?.needsHuman ?? false,
+      needsClarification: latestAssistant?.needsClarification ?? false,
+      handoffReason: latestAssistant?.handoffReason ?? null,
+      intent: latestAssistant?.intent,
     })
-  }, [conversationId, messages, onConversationStateChange, onMaterialsChange])
+  }, [conversationId, latestAssistant, onConversationStateChange, onMaterialsChange])
 
   return (
     <div className="chat-workspace">
@@ -159,40 +200,60 @@ export default function ChatPanel({
         <div className="chat-title-group">
           <div className="chat-title-avatar"><RobotOutlined /></div>
           <div className="chat-title-line">
-            <Typography.Title level={4}>AI 客服助手</Typography.Title>
-            <span className="chat-title-status"><i className="online-dot" />当前会话 · 自动接待</span>
+            <Typography.Title level={4}>{manualMode ? '人工接管会话' : 'AI 客服助手'}</Typography.Title>
+            <span className="chat-title-status"><i className={manualMode ? 'online-dot' : 'online-dot'} />{manualMode ? '人工坐席在线 · 直接回复' : '当前会话 · 自动接待'}</span>
           </div>
         </div>
-        <div className="chat-toolbar-actions"><Tag icon={<SafetyCertificateOutlined />} color="blue">知识库优先</Tag><Button type="text" icon={<InfoCircleOutlined />} /></div>
+        <div className="chat-toolbar-actions">
+          {manualMode ? <Tag icon={<UserOutlined />} color="red">人工接管</Tag> : <Tag icon={<SafetyCertificateOutlined />} color="blue">知识库优先</Tag>}
+          <Button type="text" icon={<InfoCircleOutlined />} />
+        </div>
       </div>
-      <div className="chat-policy-bar"><CheckCircleFilled /><span>回答仅基于已接入资料，所有知识结论自动附带引用</span><span className="policy-spacer" /><Typography.Text type="secondary">响应策略：稳健模式</Typography.Text></div>
+      <div className="chat-policy-bar">
+        {manualMode ? (
+          <>
+            <CheckCircleFilled />
+            <span>当前已由人工坐席接管，回复不再经过 AI 检索链路</span>
+            <span className="policy-spacer" />
+            <Typography.Text type="secondary">人工模式</Typography.Text>
+          </>
+        ) : (
+          <>
+            <CheckCircleFilled />
+            <span>回答仅基于已接入资料，所有知识结论自动附带引用</span>
+            <span className="policy-spacer" />
+            <Typography.Text type="secondary">响应策略：稳健模式</Typography.Text>
+          </>
+        )}
+      </div>
 
       {isEmpty ? (
         <div className="chat-empty-state">
           <div className="empty-orbit"><div className="empty-orbit-inner"><RobotOutlined /></div><span className="orbit-dot orbit-dot-one" /><span className="orbit-dot orbit-dot-two" /></div>
-          <Typography.Title level={2}>今天想为客户解决什么？</Typography.Title>
-          <Typography.Paragraph>我会先理解问题，再从知识库召回依据；订单/物流会调用只读工具核实归属后回答，售后与投诉会明确转人工处理。</Typography.Paragraph>
-          <div className="suggestion-grid">
-            {SUGGESTIONS.map((suggestion) => (
-              <Button key={suggestion.label} className="suggestion-card" onClick={() => handleSend(suggestion.label)}>
-                <span>
-                  <em className="suggestion-layer">{suggestion.layer}</em>
-                  <strong>{suggestion.label}</strong>
-                  <small>{suggestion.description}</small>
-                </span>
-                <span className="suggestion-arrow">↗</span>
-              </Button>
-            ))}
-          </div>
-          <div className="empty-trust"><SafetyCertificateOutlined /> 内容经过引用校验 · 低置信度自动澄清 · 高风险自动转人工</div>
+          <Typography.Title level={2}>等待客户发起咨询</Typography.Title>
+          <Typography.Paragraph>客户通过登录端提问后，AI 会先接待；转人工的会话会出现在这里，由你直接人工回复。</Typography.Paragraph>
         </div>
       ) : (
         <div className="chat-message-area"><Bubble.List items={items} role={roles} autoScroll /></div>
       )}
 
       <div className="chat-composer">
-        <div className="composer-meta"><span><span className="composer-pulse" /> AI 自动接待</span><span>Enter 发送 · Shift + Enter 换行</span></div>
-        <Sender className="service-sender" value={input} onChange={setInput} loading={isRequesting} onSubmit={handleSend} onCancel={abort} placeholder="输入客户问题，开始一次新的服务…" submitType="enter" autoSize={{ minRows: 1, maxRows: 6 }} />
+        <div className="composer-meta">
+          <span><span className={manualMode ? 'composer-pulse' : 'composer-pulse'} /> {manualMode ? '人工坐席回复' : 'AI 自动接待'}</span>
+          <span>Enter 发送 · Shift + Enter 换行</span>
+        </div>
+        <Sender
+          className="service-sender"
+          value={input}
+          onChange={setInput}
+          loading={isRequesting || manualSending}
+          onSubmit={handleSend}
+          onCancel={abort}
+          disabled={!manualMode}
+          placeholder={manualMode ? '输入人工回复，回车发送…' : '客户发起后，转人工会话可在此回复'}
+          submitType="enter"
+          autoSize={{ minRows: 1, maxRows: 6 }}
+        />
       </div>
     </div>
   )

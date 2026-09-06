@@ -1,4 +1,4 @@
-import { Card, Progress, Tag, Tooltip, Typography } from 'antd'
+import { Card, Tag, Tooltip, Typography } from 'antd'
 import {
   CheckCircleFilled,
   ClockCircleOutlined,
@@ -16,17 +16,43 @@ export default function ContextPanel({
   needsHuman = false,
   needsClarification = false,
   handoffReason,
+  intent,
 }: {
   materials: Material[]
   conversationId?: string
-  responseMode?: 'answer' | 'clarify' | 'handoff'
+  responseMode?: 'answer' | 'clarify' | 'handoff' | 'manual'
   needsHuman?: boolean
   needsClarification?: boolean
   handoffReason?: string | null
+  intent?: 'greeting' | 'knowledge_question' | 'order_query' | 'after_sale' | 'complaint' | 'unknown'
 }) {
   const isHandoff = needsHuman || responseMode === 'handoff'
-  const routeLabel = isHandoff ? '等待人工接管' : needsClarification ? '等待补充信息' : 'AI 自动处理中'
-  const routeColor = isHandoff ? 'gold' : needsClarification ? 'orange' : 'green'
+  const isManual = responseMode === 'manual'
+  const routeLabel = isManual ? '人工已回复' : isHandoff ? '等待人工接管' : needsClarification ? '等待补充信息' : 'AI 自动处理中'
+  const routeColor = isManual ? 'green' : isHandoff ? 'gold' : needsClarification ? 'orange' : 'green'
+  const intentLabel: Record<NonNullable<typeof intent>, string> = {
+    greeting: '问候',
+    knowledge_question: '知识问答',
+    order_query: '订单/物流',
+    after_sale: '售后',
+    complaint: '投诉/高风险',
+    unknown: '待澄清',
+  }
+  const currentIntent = intent ? intentLabel[intent] : '待判断'
+  const ragActive = materials.length > 0 || (responseMode === 'answer' && intent !== 'order_query')
+  const ragBadge = needsClarification && intent === 'knowledge_question'
+    ? '无匹配·待澄清'
+    : ragActive
+      ? '已检索/已回答'
+      : '待调用'
+  const toolActive = intent === 'order_query'
+  const toolBadge = isManual ? '已转人工处理' : needsClarification
+    ? '缺订单号·待澄清'
+    : toolActive
+      ? isHandoff
+        ? '已执行·需人工'
+        : '已接入'
+      : '待接入'
 
   return (
     <div className="context-panel">
@@ -63,10 +89,9 @@ export default function ContextPanel({
             <Typography.Text type="secondary">当前处理策略</Typography.Text>
           </div>
         </div>
-        <div className="route-line"><CheckCircleFilled /> <span className="route-label">意图识别</span><span className="route-badge">已启用</span></div>
-        <div className="route-line"><CheckCircleFilled /> <span className="route-label">混合检索 + RRF</span><span className="route-badge">已启用</span></div>
-        <div className={`route-line ${isHandoff ? 'route-active' : ''}`}><ClockCircleOutlined /> <span className="route-label">订单查询工具</span><span className={`route-badge ${isHandoff ? 'route-badge-warn' : ''}`}>{isHandoff ? '需人工' : '只读已接入'}</span></div>
-        <Progress className="route-progress" percent={isHandoff ? 100 : 75} showInfo={false} strokeColor={isHandoff ? '#e59b2e' : '#2563eb'} trailColor="#e8edf5" size="small" />
+        <div className={`route-line ${intent ? 'route-active' : ''}`}><CheckCircleFilled /> <span className="route-label">意图识别</span><span className="route-badge">{currentIntent}</span></div>
+        <div className={`route-line ${ragActive ? 'route-active' : 'muted'}`}><CheckCircleFilled /> <span className="route-label">知识库检索（RAG）</span><span className={`route-badge ${ragActive ? '' : 'route-badge-muted'}`}>{ragBadge}</span></div>
+        <div className={`route-line ${toolActive || isManual ? 'route-active' : 'muted'}`}><ClockCircleOutlined /> <span className="route-label">只读订单工具</span><span className={`route-badge ${toolActive && isHandoff ? 'route-badge-warn' : toolActive || isManual ? '' : 'route-badge-muted'}`}>{toolBadge}</span></div>
       </Card>
 
       <div className="context-section-title">

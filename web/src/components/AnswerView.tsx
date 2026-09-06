@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { Alert } from 'antd'
+import { Alert, Tag } from 'antd'
 import { CheckCircleFilled, CloseCircleFilled, FileTextOutlined } from '@ant-design/icons'
 import { Sources, XProvider } from '@ant-design/x'
 import { XMarkdown } from '@ant-design/x-markdown'
@@ -83,15 +83,61 @@ function AnswerView({ msg, status }: { msg: ChatMessage; status?: MessageStatus 
     extra: `来源 ${i + 1}`,
   }))
 
+  const clarifyTitle = msg.intent === 'order_query'
+    ? '订单/物流：请补充订单号'
+    : msg.clarifyReason
+      ? '需要补充信息'
+      : '需要补充一点信息'
+  const clarifyDescription = msg.clarifyReason
+    ?? (msg.intent === 'order_query'
+      ? '已识别到订单/物流需求，但还没有订单号。请提供订单号（例如 A00001），我会先做归属校验再查询物流。'
+      : '这句话没有明确进入知识问答、订单或售后任一流程，请换个说法或补充具体问题；也可以直接说“转人工”。')
+
+  let layerText = ''
+  let layerColor = 'blue'
+  if (msg.responseMode === 'manual') {
+    layerText = '人工坐席回复'
+    layerColor = 'green'
+  } else if (msg.responseMode === 'handoff') {
+    layerText = '人工接管'
+    layerColor = 'gold'
+  } else if (msg.responseMode === 'clarify' && msg.intent === 'order_query') {
+    layerText = '订单工具 · 等待补充订单号'
+    layerColor = 'orange'
+  } else if (msg.responseMode === 'clarify') {
+    layerText = '意图/知识不足 · 等待澄清'
+    layerColor = 'orange'
+  } else if (msg.toolResults?.length) {
+    layerText = '只读订单工具 · 归属校验'
+    layerColor = 'geekblue'
+  } else if (msg.materials?.length || msg.citations?.length) {
+    layerText = '知识库检索 · 引用回答'
+  }
+
   return (
     <div style={{ maxWidth: '100%' }}>
+      {layerText ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+          <Tag color={layerColor} bordered={false}>当前链路</Tag>
+          <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>{layerText}</span>
+        </div>
+      ) : null}
+      {msg.responseMode === 'manual' && (
+        <Alert
+          className="manual-answer-alert"
+          type="success"
+          showIcon
+          message="人工坐席回复"
+          description="此回复由人工客服接管发出，不经过 AI 检索链路。"
+        />
+      )}
       {msg.responseMode === 'handoff' && (
         <Alert
           className="handoff-answer-alert"
           type="warning"
           showIcon
-          message="已进入人工接管流程"
-          description={msg.handoffReason ?? '当前问题需要人工客服继续处理'}
+          message="转人工：已停止自动处理"
+          description={msg.handoffReason ?? '当前问题需要人工客服继续处理，请人工坐席接管。'}
         />
       )}
       {msg.responseMode === 'clarify' && (
@@ -99,8 +145,8 @@ function AnswerView({ msg, status }: { msg: ChatMessage; status?: MessageStatus 
           className="clarify-answer-alert"
           type="info"
           showIcon
-          message="需要补充一点信息"
-          description="请提供产品、订单或售后场景，我再继续帮您处理。"
+          message={clarifyTitle}
+          description={clarifyDescription}
         />
       )}
       {msg.toolResults?.length && msg.responseMode !== 'handoff' ? (
@@ -120,7 +166,9 @@ function AnswerView({ msg, status }: { msg: ChatMessage; status?: MessageStatus 
         {displayText ? (
           <XMarkdown content={displayText} />
         ) : streaming ? (
-          <ThinkingDots />
+          msg.progressLabel
+            ? <span style={{ color: 'rgba(0,0,0,0.45)' }}>{msg.progressLabel}</span>
+            : <ThinkingDots />
         ) : (
           <span style={{ color: 'rgba(0,0,0,0.35)' }}>（空回答）</span>
         )}

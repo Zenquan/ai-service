@@ -25,7 +25,7 @@ type Conversation = {
   time: string
   avatar: string
   color: string
-  status: 'active' | 'waiting' | 'handoff'
+  status: 'active' | 'waiting' | 'handoff' | 'manual'
   unread?: number
 }
 
@@ -44,6 +44,7 @@ export function toSidebarItem(item: ConversationSummary): Conversation {
     handoff: '等待人工客服接管',
     waiting: '等待补充客户信息',
     open: 'AI 自动接待中',
+    manual: '人工已回复',
   }
   // 会话标题 = 第一句话的前 N 个字（无消息时回退到转人工原因/默认名）
   const firstMessage = (item.first_message ?? '').trim()
@@ -83,15 +84,25 @@ export default function ConversationSidebar({
   currentStatus?: Conversation['status']
 }) {
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<'all' | Conversation['status']>('all')
+  const [filter, setFilter] = useState<'all' | 'waiting' | 'handoff'>('all')
 
   const visibleConversations = conversations.map((item) =>
     item.id === activeId && activeId.startsWith('web-')
-      ? { ...toSidebarItem(item), status: currentStatus, summary: currentStatus === 'handoff' ? '等待人工客服接管' : currentStatus === 'waiting' ? '等待补充客户信息' : 'AI 自动接待中' }
+      ? {
+          ...toSidebarItem(item),
+          status: currentStatus,
+          summary: currentStatus === 'handoff'
+            ? '等待人工客服接管'
+            : currentStatus === 'waiting'
+              ? '等待补充客户信息'
+              : currentStatus === 'manual'
+                ? '人工已回复'
+                : 'AI 自动接待中',
+        }
       : toSidebarItem(item),
   )
   const filteredConversations = visibleConversations.filter((item) =>
-    (filter === 'all' || item.status === filter) &&
+    (filter === 'all' || (filter === 'handoff' ? (item.status === 'handoff' || item.status === 'manual') : item.status === filter)) &&
     `${item.name} ${item.summary}`.toLowerCase().includes(search.toLowerCase()),
   )
 
@@ -104,7 +115,7 @@ export default function ConversationSidebar({
       <div className="sidebar-tabs">
         <button className={filter === 'all' ? 'is-active' : ''} type="button" onClick={() => setFilter('all')}>全部 <span>{visibleConversations.length}</span></button>
         <button className={filter === 'waiting' ? 'is-active' : ''} type="button" onClick={() => setFilter('waiting')}>待处理 <span>{visibleConversations.filter((item) => item.status === 'waiting').length}</span></button>
-        <button className={filter === 'handoff' ? 'is-active' : ''} type="button" onClick={() => setFilter('handoff')}>人工接管 <span>{visibleConversations.filter((item) => item.status === 'handoff').length}</span></button>
+        <button className={filter === 'handoff' ? 'is-active' : ''} type="button" onClick={() => setFilter('handoff')}>人工接管 <span>{visibleConversations.filter((item) => item.status === 'handoff' || item.status === 'manual').length}</span></button>
       </div>
 
       <Input

@@ -278,10 +278,10 @@ textarea:focus-visible {
 }
 
 .new-conversation {
-  height: 48px !important;
+  height: 38px !important;
   line-height: 1;
-  padding: 0 16px;
-  margin-bottom: 14px;
+  padding: 0 14px;
+  margin-bottom: 12px;
   border: 0;
   border-radius: 12px;
   background: var(--blue);
@@ -289,6 +289,13 @@ textarea:focus-visible {
   font-size: 14px;
   font-weight: 600;
   transition: box-shadow 150ms var(--ease-standard), background 150ms var(--ease-standard);
+}
+
+.logout-button.ant-btn {
+  height: auto;
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 8px;
 }
 
 .new-conversation:hover {
@@ -1412,4 +1419,57 @@ textarea:focus-visible {
   .chat-composer {
     padding: 0 16px 14px;
   }
+}
+
+/* 登录页 */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(37, 99, 235, 0.12), transparent 35%),
+    linear-gradient(135deg, #f6f9ff 0%, #eef4ff 100%);
+  padding: 24px;
+}
+
+.login-card {
+  width: 360px;
+  max-width: 100%;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 18px 48px rgba(30, 64, 175, 0.12);
+  padding: 32px 28px;
+}
+
+.login-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.login-brand .brand-mark {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  margin: 0 auto 8px;
+}
+
+.login-brand .ant-typography {
+  margin-bottom: 4px;
+}
+
+/* 客户聊天 */
+.customer-app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.customer-chat-main {
+  flex: 1;
+  min-height: 0;
+  padding: 0 max(16px, calc((100vw - 760px) / 2));
 }
