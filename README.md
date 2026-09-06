@@ -146,7 +146,7 @@ fastapi-app/
   - graph 图契约：知识问答 / 澄清 / 转人工 / 引用校验重写循环（注入 mock，零外部依赖）
   - 存储层：MySQL 选择 / 内存回退 / 会话列表
   - 接口层：FastAPI TestClient，打桩服务层（health/docs/ingest 白名单与防穿越/ask 参数与错误透传/会话 API）
-- **端到端实测**：health ✓ / 上传入库 ✓ / 文档列表与删除 ✓ / ask（"钱大妈日清模式"）回答 + 引用校验 ✓ / 会话消息 storage=mysql 落库 ✓ / 部署重启后向量索引自动重建 ✓
+- **端到端实测**：health ✓ / 上传入库 ✓ / 文档列表与删除 ✓ / ask（"什么是 AI Agent？"）回答 + 引用校验 ✓ / 会话消息 storage=mysql 落库 ✓ / 部署重启后向量索引自动重建 ✓
 - **前端**：`tsc --noEmit` 类型检查通过；`vite build` 可出产物
 
 ## 🛠️ 常用命令
@@ -158,7 +158,7 @@ cd fastapi-app/server && .venv/bin/python -m pytest
 # RAG CLI（不经 API 直接跑核心）
 cd fastapi-app/server
 .venv/bin/python -m server.cli ingest data/docs      # 入库
-.venv/bin/python -m server.cli ask "钱大妈的日清模式是什么？"
+.venv/bin/python -m server.cli ask "什么是 AI Agent？"
 .venv/bin/python -m server.cli eval                   # 离线 Recall@K / MRR
 .venv/bin/python -m server.cli doc-list               # 列出库内文档
 

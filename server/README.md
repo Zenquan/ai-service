@@ -32,7 +32,7 @@ uv pip install --python .venv/bin/python -e ".[local,dev]"
 
 # CLI（RAG 链路）
 .venv/bin/python -m server.cli ingest data/docs
-.venv/bin/python -m server.cli ask "钱大妈的日清模式是什么？"
+.venv/bin/python -m server.cli ask "什么是 AI Agent？"
 
 # API 服务（必须单 worker：Qdrant local 单进程锁）
 .venv/bin/python -m uvicorn server.main:app --reload --port 8000 --workers 1

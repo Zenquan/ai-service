@@ -65,9 +65,9 @@ class TestEvaluate:
         """双条件（doc + kw）全部命中 → 100%。"""
         monkeypatch.setattr(
             rag_main, "retrieve",
-            lambda *_a, **_k: [{"text": "日清模式正文", "doc": "01-钱大妈日清模式.md", "seq": 0}],
+            lambda *_a, **_k: [{"text": "Agent 规划与工具正文", "doc": "01-AI-Agent入门.md", "seq": 0}],
         )
-        cases = [{"question": "q1", "expect_doc": ["01-钱大妈日清模式.md"], "expect_kw": ["日清"]}]
+        cases = [{"question": "q1", "expect_doc": ["01-AI-Agent入门.md"], "expect_kw": ["规划", "工具"]}]
         out = self._eval(tmp_path, cases, monkeypatch)
         assert out["hit"] == 1 and out["rate"] == 1.0
         assert out["cases"][0]["ok"] is True
@@ -83,7 +83,7 @@ class TestEvaluate:
         assert out["hit"] == 0 and out["cases"][0]["ok"] is False
 
     def test_empty_cases_falls_back_to_builtin(self, tmp_path, monkeypatch):
-        """空用例文件 → 使用内置默认用例（钱大妈 + RAG 原理），API 不崩。"""
+        """空用例文件 → 使用内置默认用例（AI Agent + RAG 原理），API 不崩。"""
         monkeypatch.setattr(rag_main, "retrieve", lambda *_a, **_k: [])
         out = self._eval(tmp_path, [], monkeypatch)
         assert out["total"] == 2  # 内置默认用例数

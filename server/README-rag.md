@@ -57,7 +57,7 @@ python main.py doc-delete "rag-test-pdfs/DeepFace-ICCV2017.pdf" # 删除单个�
 from main import ingest, ask, run
 
 stats = ingest("data/docs")          # → {"total": N, "docs": [...], "skipped": [...]}
-ans = ask("钱大妈的模式是什么？")     # → {"answer", "citations", "citation_valid", "materials", ...}
+ans = ask("什么是 AI Agent？")     # → {"answer", "citations", "citation_valid", "materials", ...}
 full = run("data/docs", "你的问题")  # → {"ingest": stats, "ask": ans}
 ```
 

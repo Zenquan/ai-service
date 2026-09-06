@@ -202,7 +202,7 @@ def evaluate(
         cases = json.loads(cases_path.read_text(encoding="utf-8"))
     if not cases:
         cases = [
-            {"question": "钱大妈的门店经营模式是什么？", "relevant_docs": ["01-钱大妈日清模式.md"]},
+            {"question": "什么是 AI Agent？", "relevant_docs": ["01-AI-Agent入门.md"]},
             {"question": "什么是 RAG 检索增强生成？", "relevant_docs": ["02-RAG原理.md"]},
         ]
 

@@ -17,8 +17,8 @@ def _generator(answer: str):
 
 def test_knowledge_question_uses_rag_and_validates_citation():
     agent = create_customer_service_agent(
-        retriever=_retriever([{"text": "日清模式", "doc": "store.md", "seq": 0}]),
-        generator=_generator("门店采用日清模式[1]"),
+        retriever=_retriever([{"text": "AI Agent 介绍", "doc": "store.md", "seq": 0}]),
+        generator=_generator("AI Agent 能规划任务并调用工具[1]"),
     )
 
     result = agent.ask("门店经营模式是什么？", conversation_id="c-1")

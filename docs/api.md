@@ -46,7 +46,7 @@ curl http://127.0.0.1:8000/api/v1/health
 
 ```json
 [
-  { "doc": "01-钱大妈日清模式.md", "chunks": 1 },
+  { "doc": "01-AI-Agent入门.md", "chunks": 1 },
   { "doc": "rag-test-pdfs/DeepFace-ICCV2017.pdf", "chunks": 71 }
 ]
 ```
@@ -131,7 +131,7 @@ curl -X DELETE "http://127.0.0.1:8000/api/v1/docs/rag-test-pdfs%2FDeepFace-ICCV2
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/ingest \
-  -F "files=@01-钱大妈日清模式.md" \
+  -F "files=@01-AI-Agent入门.md" \
   -F "files=@ResNet-CVPR2016.pdf"
 ```
 
@@ -150,20 +150,20 @@ JSON 请求体：
 
 流程：结构感知 chunk → 向量与标题加权 BM25 双路召回 → RRF → rerank（可关/设阈值）→ Prompt 编号注入 → DeepSeek 生成 → 引用校验。
 
-**200 响应**（实测："钱大妈的门店经营模式是什么？"）：
+**200 响应**（实测："什么是 AI Agent？"）：
 
 ```json
 {
-  "query": "钱大妈的门店经营模式是什么？",
+  "query": "什么是 AI Agent？",
   "materials": [
     {
-      "text": "钱大妈门店经营采用“日清模式”，当日到货、当日清完……",
-      "doc": "01-钱大妈日清模式.md",
+      "text": "AI Agent 以大语言模型为核心，能拆解任务并调用外部工具……",
+      "doc": "01-AI-Agent入门.md",
       "seq": 0,
       "score": 0.0476190476190476
     }
   ],
-  "answer": "钱大妈的门店经营模式是“日清模式”：当日到货、当日清完，不卖隔夜菜……[来源1]",
+  "answer": "AI Agent 以大语言模型为核心，能自主规划任务、调用外部工具并持续迭代直至达成目标……[来源1]",
   "citations": [1],
   "citation_valid": true,
   "material_count": 3,
@@ -195,7 +195,7 @@ JSON 请求体：
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/ask \
   -H "Content-Type: application/json" \
-  -d '{"query": "钱大妈的门店经营模式是什么？"}'
+  -d '{"query": "什么是 AI Agent？"}'
 
 # 关闭 rerank（调试检索时更快）
 curl -X POST http://127.0.0.1:8000/api/v1/ask \

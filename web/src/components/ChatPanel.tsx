@@ -13,8 +13,8 @@ import { api } from '../lib/api'
 import type { Material } from '../lib/api'
 
 const SUGGESTIONS = [
-  { label: '钱大妈的日清模式是什么？', description: '门店经营' },
-  { label: '什么是 RAG 检索增强生成？', description: '产品知识' },
+  { label: '什么是 AI Agent？', description: '概念入门' },
+  { label: 'AI Agent 的核心能力有哪些？', description: '能力拆解' },
   { label: 'DeepFace 论文提出了什么？', description: '论文问答' },
 ]
 

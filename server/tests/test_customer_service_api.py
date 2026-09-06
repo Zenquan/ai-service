@@ -28,8 +28,8 @@ def test_message_creates_session_and_persists_history(client, monkeypatch):
         rag_service,
         "ask",
         lambda query: {
-            "answer": "日清模式是每日清货[来源1]",
-            "materials": [{"doc": "store.md", "seq": 0, "text": "日清模式", "score": 0.9}],
+            "answer": "AI Agent 是大模型驱动的自主智能体[来源1]",
+            "materials": [{"doc": "store.md", "seq": 0, "text": "AI Agent 核心能力", "score": 0.9}],
             "citations": [1],
             "citation_valid": True,
             "error": None,
