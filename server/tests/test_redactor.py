@@ -9,6 +9,7 @@ from server.services.redactor import (
     REDACTOR_ENABLED,
     redact,
     redact_messages,
+    redact_metrics,
     redact_text,
     reload_rules,
 )
@@ -137,3 +138,32 @@ def test_module_default_redactor_enabled_flag():
         assert redactor.REDACTOR_ENABLED is True
     finally:
         monkeypatch.undo()
+
+
+def test_redact_metrics_only_targets_pii_keys():
+    """redact_metrics 只白名单字段脱敏，元数据标签（intent/response_mode）原样保留。"""
+    payload = {
+        "intent": "order_query",                # 元数据，不脱敏
+        "response_mode": "handoff",              # 元数据，不脱敏
+        "latency_ms": 320,                       # 数值，不脱敏
+        "clarify_reason": "请补充 13812345678 订单",  # PII，脱敏
+        "handoff_reason": "投诉 11010519491231002X",   # PII，脱敏
+        "content": "我的邮箱 alice@example.com",       # PII，脱敏
+    }
+    cleaned = redact_metrics(payload)
+    assert cleaned["intent"] == "order_query"
+    assert cleaned["response_mode"] == "handoff"
+    assert cleaned["latency_ms"] == 320
+    assert "138****5678" in cleaned["clarify_reason"]
+    assert "1101**********002X" in cleaned["handoff_reason"]
+    assert "a***@example.com" in cleaned["content"]
+
+
+def test_redact_metrics_disabled_returns_payload_copy():
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setenv("REDACTOR_ENABLED", "0")
+    reload_rules()
+    payload = {"content": "我的手机 13812345678", "intent": "order_query"}
+    cleaned = redact_metrics(payload)
+    assert cleaned == payload
+    assert cleaned is not payload  # 是副本，不修改入参

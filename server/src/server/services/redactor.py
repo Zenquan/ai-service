@@ -168,11 +168,45 @@ def reload_rules() -> None:
     _RULES = _load_rules()
 
 
+# 指标埋点中常见的「可能含 PII」字段名（明确白名单，避免误伤指标元数据）。
+_METRICS_PII_KEYS = frozenset({
+    "content",
+    "user_message",
+    "assistant_message",
+    "clarify_reason",
+    "handoff_reason",
+    "query",
+    "answer",
+    "args_redacted",
+    "error",
+})
+
+
+def redact_metrics(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """为评测埋点提供「白名单字段脱敏」。
+
+    只对 ``_METRICS_PII_KEYS`` 中字段递归脱敏，其它字段（如 ``intent`` / ``response_mode`` /
+    ``latency_ms`` 等）原样保留。这样：
+    - 落 MySQL 的 ``evaluation_events`` 不会泄露手机号、身份证等；
+    - 指标元数据（标签、状态、延迟）保持原值，便于聚合与告警查询。
+    """
+    if not REDACTOR_ENABLED:
+        return dict(payload)
+    out: dict[str, Any] = {}
+    for key, value in payload.items():
+        if key in _METRICS_PII_KEYS:
+            out[key] = redact(value)
+        else:
+            out[key] = value
+    return out
+
+
 __all__ = [
     "REDACTOR_ENABLED",
     "REDACTOR_MASK_CHAR",
     "redact",
     "redact_text",
     "redact_messages",
+    "redact_metrics",
     "reload_rules",
 ]
