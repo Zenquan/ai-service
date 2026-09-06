@@ -158,12 +158,13 @@ ai-service/
 1. **单一后端包 + src 布局**：rag/langgraph/api 三层合并为 `server` 包，正规 `from server.core.retrieve import retrieve` 导入（无 sys.path hack、无模块名碰撞），依赖单一来源 `server/pyproject.toml`
 2. **编排与检索解耦**：LangGraph 图全部依赖注入（retriever/generator/classifier 参数化），契约测试不碰向量库与模型
 3. **优雅降级 + 显性暴露**：LangGraph 不可用回退 RAG 直答；MySQL 不可用回退内存并在响应体带 `storage` 字段；空库时友好回答而非报错
-4. **只读工具闭环**：订单/物流查询走 LangGraph 工具节点，Pydantic 入参校验 + 会话归属校验，非本人/失败显式转人工且不改写结果；缺单号由 checkpoint 多轮澄清补齐
-5. **云端持久化双保险**：会话消息落 MySQL；文档切块同步存 MySQL，服务启动 lifespan 自动重建向量索引——重新部署不丢数据
-6. **Qdrant local 免 Docker**：与生产远端同 API；单进程锁用 `threading.Lock` + `--workers 1`
-7. **混合检索 RRF**：标题加权 BM25（中文 2-gram + 英文词）与语义向量双路召回 → 排名倒数融合
-8. **结构感知切块**：标题路径和段落边界进入 chunk 元数据、embedding 上下文与 Prompt，超长段落保持完整
-9. **防幻觉闭环**：生成强制 `[来源N]` → 程序校验越界 → 前端「引用校验通过/含越界引用」徽标 + 素材原文展开
+4. **只读工具闭环**：订单/物流查询走 LangGraph 工具节点，Pydantic 入参校验 + 会话归属校验，非本人/失败显式转人工且不改写结果；缺单号由原生 checkpoint 多轮澄清补齐（MySQL 持久化，重启可恢复）
+5. **可替换意图分类器**：确定性规则分类器与 LLM 分类器同契约（`{intent, intent_confidence, slots}`），LLM 低置信度自适应追问、失败自动回退规则；`LLM_CLASSIFIER=1` 一键切换
+6. **云端持久化双保险**：会话消息落 MySQL；文档切块同步存 MySQL，服务启动 lifespan 自动重建向量索引——重新部署不丢数据
+7. **Qdrant local 免 Docker**：与生产远端同 API；单进程锁用 `threading.Lock` + `--workers 1`
+8. **混合检索 RRF**：标题加权 BM25（中文 2-gram + 英文词）与语义向量双路召回 → 排名倒数融合
+9. **结构感知切块**：标题路径和段落边界进入 chunk 元数据、embedding 上下文与 Prompt，超长段落保持完整
+10. **防幻觉闭环**：生成强制 `[来源N]` → 程序校验越界 → 前端「引用校验通过/含越界引用」徽标 + 素材原文展开
 
 ## ✅ 测试与验证现状
 

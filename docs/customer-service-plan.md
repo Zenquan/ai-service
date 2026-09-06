@@ -52,7 +52,7 @@ FastAPI 会话服务优先加载 LangGraph Agent；缺依赖或运行失败时�
 - LangGraph checkpoint 生产持久化（当前缺单号澄清靠进程内存 checkpoint，重启不恢复）。
 - 真实业务只读接口替换演示订单源；写操作（退款/改址/取消）尚未开放。
 - JWT/OAuth 生产化：真实验证码、密码重置、令牌刷新、多租户隔离。
-- 意图识别仍是确定性规则，未接 LLM 分类器与低置信度自适应追问。
+- 意图识别默认仍是确定性规则（LLM 分类器已实现但默认关闭，需 `LLM_CLASSIFIER=1` 启用）。
 - 客服任务评测：一次解决率、转人工率、工具调用成功率、无依据承诺率等指标尚未体系化。
 
 ## 3. MVP 范围
@@ -385,6 +385,11 @@ erDiagram
 - `evaluation_cases`：问题、相关文档/chunk、意图、期望工具和安全标签。
 - `evaluation_runs`：版本、配置、Recall@K、MRR、任务成功率和失败明细。
 
+已落地持久化表（`server/services/`）：
+
+- `conversations` / `messages` / `graph_checkpoints`：会话、消息与知识澄清轮次计数（`chat_store.py`，pymysql 短连接）。
+- `langgraph_checkpoints` / `langgraph_checkpoint_writes`：LangGraph 原生 checkpointer 的 MySQL 后端（`checkpoint_saver.py`），按 `thread_id=conversation_id` 存客服图状态（channel_values/versions/元数据），首用自动建表。
+
 Qdrant payload 继续保存 `chapter/title/section/heading_path`；客服回答引用时同时返回文档和章节路径，便于坐席快速定位依据。
 
 ## 10. 安全与可靠性
@@ -479,13 +484,13 @@ Qdrant payload 继续保存 `chapter/title/section/heading_path`；客服回答�
 - 演示 JWT 双角色认证 + 双端页面（运营工作台 / 客户聊天窗）。
 - 会话/消息 MySQL 持久化 + 文档切块落库 + 启动自动重建向量索引。
 - 请求级 trace_id 统一日志链路追踪。
+- LangGraph checkpoint 生产持久化（MySQL 后端 checkpointer）：澄清/转人工中间态按 thread_id=conversation_id 持久化，重启恢复。
+- LLM 意图分类器：`llm_classifier.LLMIntentClassifier` 替换确定性规则，JSON 结构化输出（intent/confidence/slots），低置信度（<0.7）由 LLM 生成针对性追问；失败/无 key 自动回退规则分类器，`LLM_CLASSIFIER=1` 启用（默认关闭保持确定性）。
 
 ### 下一步迭代
 
-1. **LangGraph checkpoint 生产持久化**：澄清/转人工中间态重启可恢复（当前依赖进程内存）。
-2. **LLM 意图分类器**：替换确定性规则，低置信度自适应追问，降低误路由。
-3. **真实业务只读接口**：替换演示订单源，接入真实订单/物流系统。
-4. **JWT/OAuth 生产化**：真实验证码、密码重置、令牌刷新、多租户隔离。
-5. **客服任务评测体系**：一次解决率、转人工率、工具成功率、无依据承诺率等指标 + 离线评测集。
-6. **安全与可靠性加固**：脱敏、限流、熔断、审计与告警。
-7. **受控写操作**（Phase 3）：退款/改址/取消订单走「展示影响 → 确认 → 执行」三步。
+1. **真实业务只读接口**：替换演示订单源，接入真实订单/物流系统。
+2. **JWT/OAuth 生产化**：真实验证码、密码重置、令牌刷新、多租户隔离。
+3. **客服任务评测体系**：一次解决率、转人工率、工具成功率、无依据承诺率等指标 + 离线评测集。
+4. **安全与可靠性加固**：脱敏、限流、熔断、审计与告警。
+5. **受控写操作**（Phase 3）：退款/改址/取消订单走「展示影响 → 确认 → 执行」三步。

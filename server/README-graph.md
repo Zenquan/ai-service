@@ -34,6 +34,18 @@ START → load_session → classify_intent
 `POST /api/v1/conversations/{id}/messages/manual` 直接回复
 （`response_mode=manual`），不走 AI 检索/生成链路。
 
+Checkpoint 生产持久化：客服图按 `thread_id=conversation_id` 编译进 LangGraph 原生
+checkpointer。配置 `MYSQL_HOST` 时用 `MysqlCheckpointSaver`（`services/checkpoint_saver.py`，
+落 `langgraph_checkpoints` / `langgraph_checkpoint_writes` 两张表，首用自动建表），
+澄清/转人工中间态跨进程重启可恢复；无 MySQL 时回退进程内 `InMemorySaver`。
+`intent`/`slots`/`needs_clarification` 作为跨轮恢复信号由 `classify_intent` 消费，
+`messages` 由 `add_messages` 跨轮累加，其余每轮字段由 `load_session` 重置。
+
+意图分类器：默认用确定性规则（`classifier.classify_query`）。也可注入 LLM 分类器
+`llm_classifier.LLMIntentClassifier`（设 `LLM_CLASSIFIER=1` 启用），用 DeepSeek 输出
+`{intent, intent_confidence, slots}`，低置信度（<0.7）由 LLM 生成针对用户原话的追问；
+无 key / 调用失败 / 非法 JSON 时自动回退规则分类器，保证链路不中断。
+
 原始 RAG 图仍保留，用于兼容已有实验和 LangGraph Studio 调试。
 
 ```
