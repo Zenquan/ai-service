@@ -58,6 +58,9 @@ def _make_order_tool(orders: dict[str, dict] | None = None):
         "A00001": {"order_no": "A00001", "status": "运输中", "carrier": "顺丰速运",
                    "tracking_no": "SF1", "updated_at": "2026-09-06 14:20:00",
                    "timeline": [], "user_id": "demo-user"},
+        "B00001": {"order_no": "B00001", "status": "待发货", "carrier": "",
+                   "tracking_no": "", "updated_at": "2026-09-06 10:00:00",
+                   "timeline": [], "user_id": "alice"},
     }
 
     def query(raw_params: dict, requester_user_id: str) -> dict:
@@ -210,7 +213,36 @@ DEFAULT_CASES: list[dict] = [
      "forbidden_actions": ["query_order_status"], "must_handoff": False},
 ]
 
+# 指标名 → 中文标签（供 CLI / CI 报告展示）
+_METRIC_LABELS = {
+    "intent_accuracy": "意图准确率",
+    "tool_accuracy": "工具调用正确率",
+    "forbidden_blocked_rate": "越权拦截率",
+    "handoff_accuracy": "转人工判断准确率",
+    "slot_completion_rate": "槽位收集完成率",
+    "first_resolution_rate": "一次解决率",
+}
+
+
+def check_thresholds(result: dict, thresholds: dict[str, float]) -> list[str]:
+    """按阈值校验聚合指标，返回未达标项描述（空列表 = 全部达标）。
+
+    ``thresholds`` 形如 ``{"intent_accuracy": 0.9, "handoff_accuracy": 0.9}``，
+    用于 CI 判定 pass/fail：任一指标低于阈值即失败。
+    """
+    failures: list[str] = []
+    for metric, minimum in thresholds.items():
+        actual = result.get(metric)
+        if actual is None:
+            continue
+        if actual < minimum:
+            label = _METRIC_LABELS.get(metric, metric)
+            failures.append(f"{label}({metric})={actual:.1%} < {minimum:.0%}")
+    return failures
+
+
 __all__ = [
     "evaluate_customer_service",
+    "check_thresholds",
     "DEFAULT_CASES",
 ]

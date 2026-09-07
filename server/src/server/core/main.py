@@ -301,6 +301,8 @@ def main() -> None:
     p_eval.add_argument("--ks", nargs="+", type=int, default=[1, 3, 5], help="计算哪些 K 值")
     p_cs_eval = sub.add_parser("cs-eval", help="客服任务离线评测（意图/工具/转人工/越权/槽位）")
     p_cs_eval.add_argument("--cases", type=str, default=None, help="标注集 JSON 路径（默认 data/cs_eval_cases.json，缺省用内置样例）")
+    p_cs_eval.add_argument("--json", action="store_true", help="输出 JSON 报告（含逐题明细），供 CI 采集")
+    p_cs_eval.add_argument("--fail-under", type=float, default=None, help="所有指标最低阈值（任一低于则退出码 1，用于 CI 门禁）")
     sub.add_parser("doc-list", help="列出库内文档及 chunk 数")
     p_docdel = sub.add_parser("doc-delete", help="删除单个文档（不用全量重建）")
     p_docdel.add_argument("doc", help="文档名（如 rag-test-pdfs/DeepFace-ICCV2017.pdf）")
@@ -331,25 +333,45 @@ def main() -> None:
         print(f"MRR={ev['mrr']:.3f}")
     elif args.cmd == "cs-eval":
         # 延迟导入：离线评测器 import graph 层，避免 CLI 启动即拉 LangGraph。
-        from .offline_eval import evaluate_customer_service
+        import json as _json
+        import sys as _sys
+
+        from .offline_eval import check_thresholds, evaluate_customer_service
 
         cases_path = Path(args.cases) if args.cases else (config.SERVER_ROOT / "data" / "cs_eval_cases.json")
         result = evaluate_customer_service(cases_path=cases_path)
-        for c in result["cases"]:
-            mark = "✅" if (c["intent_ok"] and c["tool_ok"] and c["handoff_ok"] and c["slots_ok"]) else "❌"
-            print(f"  {mark} [{c['actual_intent'] or '?'}] {c['question']}")
-            if not c["intent_ok"]:
-                print(f"      意图错：期望 {c['expected_intent']}，实际 {c['actual_intent']}")
-            if not c["tool_ok"]:
-                print(f"      工具错：期望 {c['expected_tools']}，实际 {c['called_tools']}")
-            if not c["handoff_ok"]:
-                print(f"      转人工判断错：期望 {c['must_handoff']}，实际 {c['needs_human']}")
-        print(f"\n意图准确率: {result['intent_accuracy']:.0%}")
-        print(f"工具调用正确率: {result['tool_accuracy']:.0%}")
-        print(f"越权拦截率: {result['forbidden_blocked_rate']:.0%}")
-        print(f"转人工判断准确率: {result['handoff_accuracy']:.0%}")
-        print(f"槽位收集完成率: {result['slot_completion_rate']:.0%}")
-        print(f"一次解决率: {result['first_resolution_rate']:.0%}")
+
+        if args.json:
+            print(_json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            for c in result["cases"]:
+                mark = "✅" if (c["intent_ok"] and c["tool_ok"] and c["handoff_ok"] and c["slots_ok"]) else "❌"
+                print(f"  {mark} [{c['actual_intent'] or '?'}] {c['question']}")
+                if not c["intent_ok"]:
+                    print(f"      意图错：期望 {c['expected_intent']}，实际 {c['actual_intent']}")
+                if not c["tool_ok"]:
+                    print(f"      工具错：期望 {c['expected_tools']}，实际 {c['called_tools']}")
+                if not c["handoff_ok"]:
+                    print(f"      转人工判断错：期望 {c['must_handoff']}，实际 {c['needs_human']}")
+            print(f"\n意图准确率: {result['intent_accuracy']:.0%}")
+            print(f"工具调用正确率: {result['tool_accuracy']:.0%}")
+            print(f"越权拦截率: {result['forbidden_blocked_rate']:.0%}")
+            print(f"转人工判断准确率: {result['handoff_accuracy']:.0%}")
+            print(f"槽位收集完成率: {result['slot_completion_rate']:.0%}")
+            print(f"一次解决率: {result['first_resolution_rate']:.0%}")
+
+        if args.fail_under is not None:
+            thresholds = {k: args.fail_under for k in (
+                "intent_accuracy", "tool_accuracy", "forbidden_blocked_rate",
+                "handoff_accuracy", "slot_completion_rate",
+            )}
+            failures = check_thresholds(result, thresholds)
+            if failures:
+                print("\n❌ 未达标：", file=_sys.stderr)
+                for f in failures:
+                    print(f"  - {f}", file=_sys.stderr)
+                _sys.exit(1)
+            print(f"\n✅ 全部指标 ≥ {args.fail_under:.0%}")
     elif args.cmd == "doc-list":
         docs = list_docs()
         if not docs:

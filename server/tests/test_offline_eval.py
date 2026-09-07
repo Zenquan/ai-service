@@ -8,7 +8,7 @@
 """
 from __future__ import annotations
 
-from server.core.offline_eval import evaluate_customer_service, DEFAULT_CASES
+from server.core.offline_eval import check_thresholds, evaluate_customer_service, DEFAULT_CASES
 
 
 def test_builtin_cases_all_green():
@@ -81,3 +81,19 @@ def test_missing_order_no_clarifies():
     assert c["tool_ok"] is True          # 未调用工具（槽位不齐）
     assert c["response_mode"] == "clarify"
     assert c["needs_human"] is False
+
+
+def test_check_thresholds_pass_and_fail():
+    result = evaluate_customer_service()
+    # 全绿样例，0.9 阈值应全部通过
+    assert check_thresholds(result, {
+        "intent_accuracy": 0.9, "tool_accuracy": 0.9,
+        "forbidden_blocked_rate": 0.9, "handoff_accuracy": 0.9,
+        "slot_completion_rate": 0.9,
+    }) == []
+    # 不可能达到的阈值应返回未达标项
+    failures = check_thresholds(result, {"intent_accuracy": 1.01})
+    assert len(failures) == 1
+    assert "intent_accuracy" in failures[0]
+    # 未知指标名应被忽略（不报错）
+    assert check_thresholds(result, {"nonexistent": 0.9}) == []
