@@ -37,8 +37,10 @@
 - 云端持久化：会话/消息落 MySQL（回退内存并在响应体显性标注 `storage`）；文档切块同步存 MySQL，服务启动 lifespan 自动重建向量索引——重新部署不丢数据。
 - 可观测：请求级 `trace_id` 贯穿「消息进入 → 检索 → 生成 → 落库/转人工」，统一日志输出 stdout。
 - 前端双端页面：运营客服工作台（会话队列 / 对话主区 / 实时上下文 / 人工接管分栏）+ 客户聊天窗（快捷提问引导 / 流式回答 / 人工回复可见）。
+- LangGraph checkpoint 生产持久化：MySQL 后端 checkpointer（`checkpoint_saver.py`），按 `thread_id=conversation_id` 存图状态，重启恢复澄清/转人工中间态。
+- 客服任务评测体系 + PII 脱敏：离线评测（`cs-eval` 任务门禁 + Recall@K/MRR 检索联动）+ 在线埋点（evaluation_events）/ Prometheus（`/metrics`）+ 告警 + 三层脱敏；LLM 意图分类器可插拔替换（默认关闭）。
 
-FastAPI 会话服务优先加载 LangGraph Agent；缺依赖或运行失败时自动回退 RAG 直答。LangGraph checkpoint 生产持久化、真实业务只读接口替换演示订单源、生产级 JWT/OAuth 与多租户留在后续迭代。
+FastAPI 会话服务优先加载 LangGraph Agent；缺依赖或运行失败时自动回退 RAG 直答。真实业务只读接口替换演示订单源、生产级 JWT/OAuth 与多租户、限流熔断与审计留在后续迭代。
 
 ### 已具备
 
@@ -46,14 +48,15 @@ FastAPI 会话服务优先加载 LangGraph Agent；缺依赖或运行失败时�
 - 文档解析、结构感知切块、Qdrant 存储。
 - 向量 + BM25 + RRF 混合检索，可选 rerank、引用校验和 Recall@K/MRR 离线评测。
 - LangGraph 图（rag 图 + 客服图）已并入 `server` 包，具备 retrieve、rerank、generate、validate、clarify、handoff 节点。
+- 客服任务评测：一次解决率、转人工率、工具调用成功率、无依据承诺率等指标尚未体系化。
 
 ### 需要补齐
 
-- LangGraph checkpoint 生产持久化（当前缺单号澄清靠进程内存 checkpoint，重启不恢复）。
 - 真实业务只读接口替换演示订单源；写操作（退款/改址/取消）尚未开放。
 - JWT/OAuth 生产化：真实验证码、密码重置、令牌刷新、多租户隔离。
 - 意图识别默认仍是确定性规则（LLM 分类器已实现但默认关闭，需 `LLM_CLASSIFIER=1` 启用）。
-- 客服任务评测：一次解决率、转人工率、工具调用成功率、无依据承诺率等指标尚未体系化。
+- 多意图混合识别：规则分类器按顺序匹配，「查订单+退款」会被「订单」关键词先命中，需提升售后优先级或引入 LLM 分类器处理混合诉求。
+- 限流、熔断与审计日志：PII 脱敏已落地，尚缺 Redis 限流、工具调用熔断、审计日志全链路落库。
 
 ## 3. MVP 范围
 
@@ -461,7 +464,8 @@ Qdrant payload 继续保存 `chapter/title/section/heading_path`；客服回答�
 
 - [x] JWT 演示认证：operator/customer 双角色、登录接口、接口按角色鉴权（仓库内双端页面）。
 - [x] 结构化日志 + 请求级 trace_id 链路追踪（日志每行带 trace_id，可按 ID 串起一轮对话）。
-- [x] 客服任务评测体系：指标埋点（evaluation_events）+ Prometheus 指标暴露（/metrics）+ Grafana 面板 + 告警（阈值判定/webhook/运营端面板）。
+- [x] LLM 意图分类器：`LLMIntentClassifier` 同契约替换规则分类器，低置信度（<0.7）生成自适应追问，失败/无 key 回退规则分类器（`LLM_CLASSIFIER=1` 启用，默认关闭）。
+- [x] 客服任务评测体系：离线评测（`cs-eval` 任务级门禁 + Recall@K/MRR 检索联动）+ 在线埋点（evaluation_events）+ Prometheus 指标暴露（/metrics）+ Grafana 面板 + 告警（阈值判定/webhook/运营端面板）。
 - [x] 安全加固（PII 脱敏）：Prompt、指标埋点、API 响应三层脱敏（pure regex + recursive）。
 - [ ] JWT/OAuth 生产化（真实验证码/密码重置/令牌刷新/多租户隔离）、MySQL 表结构扩展、Redis。
 - [ ] 限流、熔断和安全评测。
@@ -502,8 +506,16 @@ Qdrant payload 继续保存 `chapter/title/section/heading_path`；客服回答�
 
 ### 下一步迭代
 
-1. **真实业务只读接口**：替换演示订单源，接入真实订单/物流系统。
-2. **JWT/OAuth 生产化**：真实验证码、密码重置、令牌刷新、多租户隔离。
-3. **多意图混合识别**：当前规则分类器按顺序匹配，「查订单+退款」会被「订单」关键词先命中；可提升售后优先级或引入 LLM 分类器处理混合诉求。
-4. **限流、熔断与安全评测**：脱敏已落地，补充限流（Redis）、工具调用熔断、审计日志。
-5. **受控写操作**（Phase 3）：退款/改址/取消订单走「展示影响 → 确认 → 执行」三步。
+> 当前轮（边界/长尾语料 + Recall@K/MRR 检索评测联动）已完成：标注集 39→57 条、全量门禁回归、检索联动实测（Recall@1/3/5=1.0、MRR=1.0）。以下按优先级排列后续方向。
+
+**P0 — 安全与正确性补齐**
+1. **限流、熔断与审计日志**：PII 脱敏已落地，补充 Redis 限流、工具调用熔断、审计日志全链路落库（`tool_calls` 已有 audit_id，需接全链路）。
+2. **多意图混合识别**：规则分类器顺序匹配会误判「查订单+退款」；优先提升售后关键词优先级，或对混合诉求走 LLM 分类器。
+
+**P1 — 业务真实化**
+3. **真实业务只读接口**：替换演示订单源（`orders.py` 现为硬编码样例），接入真实订单/物流系统。
+4. **JWT/OAuth 生产化**：真实验证码、密码重置、令牌刷新、多租户隔离；MySQL 表结构扩展。
+
+**P2 — 业务闭环（Phase 3）**
+5. **受控写操作**：退款/改址/取消订单走「展示影响 → 确认 → 执行」三步。
+6. **售后流程编排 + 工单系统对接**、坐席工作台增强、会话质量分析。
