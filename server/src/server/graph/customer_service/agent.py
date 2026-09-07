@@ -16,12 +16,15 @@ class CustomerServiceAgent:
         generator: Generator | None = None,
         classifier: Classifier | None = None,
         checkpointer: BaseCheckpointSaver | None = None,
+        circuit_breaker=None,
     ):
         self.checkpointer = checkpointer
+        self.circuit_breaker = circuit_breaker
         self.graph = build_customer_service_graph(
             retriever or default_retriever(),
             generator or default_generator(),
             classifier,
+            circuit_breaker=circuit_breaker,
             checkpointer=checkpointer,
         )
 
@@ -82,5 +85,6 @@ def create_customer_service_agent(
     generator: Generator | None = None,
     classifier: Classifier | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
+    circuit_breaker=None,
 ) -> CustomerServiceAgent:
-    return CustomerServiceAgent(retriever, generator, classifier, checkpointer)
+    return CustomerServiceAgent(retriever, generator, classifier, checkpointer, circuit_breaker)

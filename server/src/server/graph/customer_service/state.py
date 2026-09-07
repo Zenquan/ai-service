@@ -34,6 +34,8 @@ class CustomerServiceState(TypedDict, total=False):
     # 多意图识别：命中的全部意图（含主意图）与多意图标记，供路由与人工交接摘要使用。
     intents: list[str]
     is_multi_intent: bool
+    # 安全标记：提示注入攻击时置 "prompt_injection"，供审计与人工交接摘要使用。
+    security_flag: str | None
     contexts: list[dict]
     # 引用列表每轮由 validate_answer / execute_order_tool 赋值覆盖，不跨轮累加。
     citations: list[int]

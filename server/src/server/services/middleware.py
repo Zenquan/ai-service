@@ -15,13 +15,17 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from typing import Awaitable, Callable
 
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
+from server.services.audit_log import get_audit_logger
+from server.services.rate_limit import RateLimiter, get_rate_limiter
 from server.services.redactor import REDACTOR_ENABLED, redact
 
 logger = logging.getLogger(__name__)
@@ -98,4 +102,83 @@ class RedactResponseMiddleware(BaseHTTPMiddleware):
         )
 
 
-__all__ = ["RedactResponseMiddleware"]
+_RATE_LIMIT_PATH_RE = re.compile(r"^/api/v1/conversations/[^/]+/messages(?:/stream)?$")
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """按客户端 IP 对客服消息写接口限流（MySQL 计数，超限返回 429）。
+
+    - 仅作用于 ``POST /api/v1/conversations/{id}/messages``（含 ``/stream``）。
+    - 维度：客户端 IP（优先 ``X-Forwarded-For`` 首跳，回退 ``request.client.host``）。
+    - 阈值：``RATE_LIMIT_PER_MINUTE``（默认 30 次 / 60 秒）；``RATE_LIMIT_ENABLED=0`` 全局关闭。
+    - 超限时打一条 ``rate_limited`` 审计并返回 429 + ``Retry-After``。
+    """
+
+    def __init__(
+        self,
+        app,
+        limiter: RateLimiter | None = None,
+        limit: int | None = None,
+        window_seconds: int = 60,
+    ) -> None:
+        super().__init__(app)
+        self._limiter = limiter
+        self._limit = limit if limit is not None else int(os.getenv("RATE_LIMIT_PER_MINUTE", "30"))
+        self._window_seconds = window_seconds
+        self._enabled = (
+            os.getenv("RATE_LIMIT_ENABLED", "1").strip().lower()
+            not in {"0", "false", "no", "off"}
+        )
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        if not self._enabled or not self._should_limit(request):
+            return await call_next(request)
+        key = self._client_key(request)
+        limiter = self._limiter or get_rate_limiter()
+        # 同步的 MySQL/内存计数放线程池，避免阻塞事件循环。
+        allowed = await run_in_threadpool(
+            limiter.check, key, self._limit, self._window_seconds
+        )
+        if allowed:
+            return await call_next(request)
+        try:
+            get_audit_logger().log(
+                "rate_limited",
+                conversation_id=self._conversation_id(request),
+                detail=f"key={key} limit={self._limit}/{self._window_seconds}s",
+            )
+        except Exception:  # noqa: BLE001 —— 审计失败不影响限流响应
+            logger.debug("rate-limit audit skipped", exc_info=True)
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "请求过于频繁，请稍后再试。"},
+            headers={"Retry-After": str(self._window_seconds)},
+        )
+
+    @staticmethod
+    def _should_limit(request: Request) -> bool:
+        return request.method == "POST" and bool(_RATE_LIMIT_PATH_RE.match(request.url.path))
+
+    @staticmethod
+    def _client_key(request: Request) -> str:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if forwarded:
+            ip = forwarded.split(",")[0].strip()
+        else:
+            ip = request.client.host if request.client else "unknown"
+        return f"ip:{ip}"
+
+    @staticmethod
+    def _conversation_id(request: Request) -> str | None:
+        parts = [p for p in request.url.path.split("/") if p]
+        # /api/v1/conversations/{id}/messages[/stream]
+        if len(parts) >= 4 and parts[0] == "api" and parts[2] == "conversations":
+            return parts[3]
+        return None
+
+
+__all__ = ["RedactResponseMiddleware", "RateLimitMiddleware"]

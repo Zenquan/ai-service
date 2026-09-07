@@ -18,7 +18,7 @@ from server.api import ask, auth, customer_service, docs, health, ingest, metric
 from server.core import config as rag_config
 from server.observability import TraceIdMiddleware, setup_logging
 from server.services import rag
-from server.services.middleware import RedactResponseMiddleware
+from server.services.middleware import RateLimitMiddleware, RedactResponseMiddleware
 
 # 模块导入即配置日志（本地/测试/CLI 兜底）；lifespan 里再调用一次，
 # 覆盖 uvicorn 启动时对 logging 的默认重置。
@@ -55,6 +55,7 @@ app = FastAPI(
 )
 
 app.add_middleware(RedactResponseMiddleware)
+app.add_middleware(RateLimitMiddleware)
 app.add_middleware(TraceIdMiddleware)
 
 # 前端 dev server（Vite）跨域

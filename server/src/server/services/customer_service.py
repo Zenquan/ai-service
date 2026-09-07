@@ -18,6 +18,7 @@ import os
 import re
 from datetime import datetime, timezone
 from threading import Lock
+from typing import Any
 from uuid import uuid4
 
 from server.graph.customer_service.classifier import classify_query
@@ -30,6 +31,8 @@ from server.services.chat_store import (
 )
 from server.services.checkpoint_saver import build_checkpointer
 from server.services.alerts import AlertEvaluator, AlertStore, build_default_alert_store
+from server.services.audit_log import get_audit_logger
+from server.services.circuit_breaker import build_default_circuit_breaker
 from server.services.metrics import EvaluationRecorder, build_default_recorder
 from server.tools.orders import extract_order_numbers
 
@@ -95,6 +98,10 @@ class CustomerServiceService:
         # 评测告警：阈值判定 + 落库 + webhook；与 recorder 同源，无 MySQL 回退内存。
         self._alert_store = build_default_alert_store()
         self._alert_evaluator = AlertEvaluator(self._recorder, self._alert_store)
+        # 工具调用熔断：无 MySQL 回退内存状态机。
+        self._circuit_breaker = build_default_circuit_breaker()
+        # 全链路审计日志：与限流中间件共享单例（无 MySQL 回退内存）。
+        self._audit = get_audit_logger()
 
     @property
     def storage_mode(self) -> str:
@@ -173,6 +180,7 @@ class CustomerServiceService:
             self._graph_agent = create_customer_service_agent(
                 classifier=classifier,
                 checkpointer=build_checkpointer(),
+                circuit_breaker=self._circuit_breaker,
             )
         except (ImportError, ModuleNotFoundError) as exc:
             logger.info("LangGraph agent unavailable; using RAG fallback: %s", exc)
@@ -228,6 +236,7 @@ class CustomerServiceService:
                 payload={"error": "graph_exception"},
                 latency_ms=int((_time.monotonic() - started) * 1000),
             )
+            self._audit_log("error", conversation_id, message_id, detail="graph_exception")
             return None
         latency_ms = int((_time.monotonic() - started) * 1000)
         answer = state.get("final_answer", "")
@@ -266,6 +275,7 @@ class CustomerServiceService:
             },
             latency_ms=latency_ms,
         )
+        self._audit_reply(conversation_id, message_id, result, latency_ms)
         return result
 
     def _record_metrics(
@@ -299,6 +309,47 @@ class CustomerServiceService:
                 logger.debug("alert check skipped", exc_info=True)
         except Exception:  # noqa: BLE001
             logger.debug("metrics record skipped", exc_info=True)
+
+    def _audit_log(
+        self,
+        action: str,
+        conversation_id: str,
+        message_id: str | None,
+        **fields: Any,
+    ) -> None:
+        """统一审计入口：任何异常吞掉——审计绝不阻塞客服主流程。"""
+        try:
+            self._audit.log(action, conversation_id=conversation_id, message_id=message_id, **fields)
+        except Exception:  # noqa: BLE001
+            logger.debug("audit skipped", exc_info=True)
+
+    def _audit_reply(
+        self,
+        conversation_id: str,
+        message_id: str | None,
+        result: dict,
+        latency_ms: int | None = None,
+    ) -> None:
+        """回复完成审计：一条 ``assistant_replied`` + 逐条 ``tool_call``。"""
+        self._audit_log(
+            "assistant_replied",
+            conversation_id,
+            message_id,
+            intent=result.get("intent"),
+            response_mode=result.get("response_mode"),
+            needs_human=bool(result.get("needs_human")),
+            handoff_reason=result.get("handoff_reason"),
+            latency_ms=latency_ms,
+        )
+        for tr in result.get("tool_results") or []:
+            tool = tr or {}
+            self._audit_log(
+                "tool_call",
+                conversation_id,
+                message_id,
+                tool_name=tool.get("tool"),
+                tool_status=tool.get("status"),
+            )
 
     def _save_graph_state(self, conversation_id: str, state: dict) -> None:
         if not state:
@@ -420,6 +471,14 @@ class CustomerServiceService:
                 self._store_failed(exc)
                 self._active_store.append_message(conversation_id, user_message)
 
+        self._audit_log(
+            "message_received",
+            conversation_id,
+            user_message["id"],
+            user_id=effective_user_id,
+            detail=message,
+        )
+
         if conversation.get("status") in {"handoff", "manual"}:
             # 人工接管/处理中的会话：客户新消息只入队，不进入 AI 链路。
             answer = "您的消息已收到，人工坐席会继续为您处理。"
@@ -463,6 +522,7 @@ class CustomerServiceService:
             message,
             user_id=effective_user_id,
             tenant_id=tenant_id,
+            message_id=user_message["id"],
         )
         if result is None:
             # LangGraph 不可用时保留安全降级：投诉/售后/订单请求直接转人工，知识问答走 RAG。
@@ -494,6 +554,9 @@ class CustomerServiceService:
                     "handoff_reason": "知识库服务暂时不可用" if error else "知识库未返回可用回答" if not answer else None,
                     "error": error,
                 }
+
+            # 降级路径（图不可用/异常）：也补一条回复审计（图路径已在 _answer_with_graph 打）。
+            self._audit_reply(conversation_id, user_message["id"], result)
 
         logger.info(
             "客服回复完成 conversation_id=%s response_mode=%s answer_len=%d handoff_reason=%s",
@@ -614,6 +677,14 @@ class CustomerServiceService:
                 self._store_failed(exc)
                 self._active_store.append_message(conversation_id, user_message)
 
+        self._audit_log(
+            "message_received",
+            conversation_id,
+            user_message["id"],
+            user_id=effective_user_id,
+            detail=message,
+        )
+
         if conversation.get("status") in {"handoff", "manual"}:
             # 人工接管/处理中的会话：客户新消息只入队，不进入 AI 链路（SSE 端用 meta 提示）。
             answer = "您的消息已收到，人工坐席会继续为您处理。"
@@ -675,6 +746,7 @@ class CustomerServiceService:
                 message,
                 user_id=effective_user_id,
                 tenant_id=tenant_id,
+                message_id=user_message["id"],
             )
             if result is not None:
                 mode = result["response_mode"]
@@ -744,6 +816,15 @@ class CustomerServiceService:
                 "citations": [],
                 "citation_valid": True,
             }
+            self._audit_log(
+                "assistant_replied",
+                conversation_id,
+                user_message["id"],
+                intent=fallback_intent,
+                response_mode="handoff",
+                needs_human=True,
+                handoff_reason=handoff_reason,
+            )
             self._persist_assistant_message(conversation_id, answer, [], "handoff", handoff_reason)
             yield {"event": "done", "storage": self._storage_mode}
             return
@@ -810,6 +891,7 @@ class CustomerServiceService:
                 "citation_valid": True,
                 "tool_results": [],
             }
+            self._audit_reply(conversation_id, user_message["id"], result)
             self._persist_assistant_message(
                 conversation_id,
                 answer,
@@ -823,6 +905,13 @@ class CustomerServiceService:
 
         if error:
             # 生成失败：不落库 assistant 回复，由前端展示错误
+            self._audit_log(
+                "error",
+                conversation_id,
+                user_message["id"],
+                intent="knowledge_question",
+                detail=error,
+            )
             yield {"event": "done", "error": error, "storage": self._storage_mode}
             return
 
@@ -836,6 +925,14 @@ class CustomerServiceService:
             citations,
             citation_valid,
             self._storage_mode,
+        )
+        self._audit_log(
+            "assistant_replied",
+            conversation_id,
+            user_message["id"],
+            intent="knowledge_question",
+            response_mode="answer",
+            needs_human=False,
         )
         self._persist_assistant_message(conversation_id, answer, materials, "answer", None, citations)
         yield {
@@ -898,6 +995,13 @@ class CustomerServiceService:
                     handoff_reason=None,
                     updated_at=reply["created_at"],
                 )
+        self._audit_log(
+            "manual_reply",
+            conversation_id,
+            reply["id"],
+            detail=message,
+            response_mode="manual",
+        )
         return {
             "conversation_id": conversation_id,
             "message_id": reply["id"],

@@ -304,6 +304,10 @@ def main() -> None:
     p_cs_eval.add_argument("--json", action="store_true", help="输出 JSON 报告（含逐题明细），供 CI 采集")
     p_cs_eval.add_argument("--fail-under", type=float, default=None, help="所有指标最低阈值（任一低于则退出码 1，用于 CI 门禁）")
     p_cs_eval.add_argument("--with-retrieval", action="store_true", help="联动检索评测：对带检索标注的样例跑 Recall@K/MRR（需真实向量库）")
+    p_redteam = sub.add_parser("cs-redteam", help="红队安全评测（提示注入/越权/对抗样本攻击阻断验证）")
+    p_redteam.add_argument("--cases", type=str, default=None, help="攻击语料 JSON 路径（默认 data/cs_redteam_cases.json）")
+    p_redteam.add_argument("--json", action="store_true", help="输出 JSON 报告（含逐题明细），供 CI 采集")
+    p_redteam.add_argument("--fail-under", type=float, default=None, help="安全阻断率最低阈值（低于则退出码 1，用于 CI 门禁）")
     sub.add_parser("doc-list", help="列出库内文档及 chunk 数")
     p_docdel = sub.add_parser("doc-delete", help="删除单个文档（不用全量重建）")
     p_docdel.add_argument("doc", help="文档名（如 rag-test-pdfs/DeepFace-ICCV2017.pdf）")
@@ -381,6 +385,41 @@ def main() -> None:
                     print(f"  - {f}", file=_sys.stderr)
                 _sys.exit(1)
             print(f"\n✅ 全部指标 ≥ {args.fail_under:.0%}")
+    elif args.cmd == "cs-redteam":
+        import json as _json
+        import sys as _sys
+
+        from .offline_eval import check_thresholds, evaluate_redteam
+
+        cases_path = Path(args.cases) if args.cases else (config.SERVER_ROOT / "data" / "cs_redteam_cases.json")
+        result = evaluate_redteam(cases_path=cases_path)
+
+        if args.json:
+            print(_json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            for c in result["cases"]:
+                mark = "✅" if c["safe"] else "❌"
+                print(f"  {mark} [{c['attack_type'] or '?'}] {c['question']}")
+                if not c["intent_ok"]:
+                    print(f"      意图错：期望 {c['expected_intent']}，实际 {c['actual_intent']}")
+                if not c["handoff_ok"]:
+                    print(f"      转人工判断错：期望 {c['must_handoff']}，实际 {c['needs_human']}")
+                if c["forbidden_violated"]:
+                    print(f"      越权调用禁止工具：{c['called_tools']}")
+                if c["leaked_fields"]:
+                    print(f"      泄露敏感串：{c['leaked_fields']}")
+            print(f"\n安全阻断率: {result['redteam_block_rate']:.0%}（{result['safe_count']}/{result['total']}）")
+            for attack_type, stat in result["by_attack_type"].items():
+                print(f"  {attack_type}: {stat['safe']}/{stat['total']}")
+
+        if args.fail_under is not None:
+            failures = check_thresholds(result, {"redteam_block_rate": args.fail_under})
+            if failures:
+                print("\n❌ 未达标：", file=_sys.stderr)
+                for f in failures:
+                    print(f"  - {f}", file=_sys.stderr)
+                _sys.exit(1)
+            print(f"\n✅ 安全阻断率 ≥ {args.fail_under:.0%}")
     elif args.cmd == "doc-list":
         docs = list_docs()
         if not docs:

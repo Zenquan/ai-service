@@ -31,6 +31,7 @@ def load_session(state: CustomerServiceState) -> CustomerServiceState:
     out["clarify_reason"] = None
     out["clarify_answer"] = None
     out["handoff_answer_override"] = None
+    out["security_flag"] = None
     out["tool_calls"] = []
     out["tool_results"] = []
     out["error"] = None
