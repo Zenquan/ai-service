@@ -37,6 +37,10 @@ jobs:
         run: |
           python -m server.cli cs-eval --fail-under 0.9
 
+      - name: 跑红队安全评测（阈值门禁）
+        run: |
+          python -m server.cli cs-redteam --fail-under 0.9
+
       - name: 跑离线评测与图契约单测
         run: |
           python -m pytest \
@@ -44,10 +48,15 @@ jobs:
             tests/test_graph_customer_service.py \
             tests/test_order_tool_closure.py \
             tests/test_llm_classifier.py \
+            tests/test_multi_intent.py \
             tests/test_metrics_recorder.py \
             tests/test_alerts.py \
             tests/test_redactor.py \
             tests/test_redact_middleware.py \
+            tests/test_rate_limit.py \
+            tests/test_circuit_breaker.py \
+            tests/test_audit_log.py \
+            tests/test_redteam.py \
             -q --tb=short
 
   # ── 前端类型检查：保证告警面板等改动不引入类型错误 ──
