@@ -428,9 +428,10 @@ Qdrant payload 继续保存 `chapter/title/section/heading_path`；客服回答�
 **已落地**（`server/core/offline_eval.py`，`python -m server.cli cs-eval`）：
 - `evaluate_customer_service`：mock retriever/generator/order_tool 跑客服图，逐条比对图状态与标注。
 - 聚合指标：`intent_accuracy` / `tool_accuracy` / `forbidden_blocked_rate` / `handoff_accuracy` / `slot_completion_rate` / `first_resolution_rate`，附逐题明细。
-- 标注集字段：`question` / `intent` / `expected_tools` / `required_slots` / `must_handoff` / `forbidden_actions` / `user_id`。
-- 默认标注集 `server/data/cs_eval_cases.json`（22 条真实客服语料，覆盖 6 类意图）；`--cases` 可指定自定义 JSON，缺省回退内置 8 条样例。
+- 标注集字段：`question` / `intent` / `expected_tools` / `required_slots` / `must_handoff` / `forbidden_actions` / `user_id`，知识问答样例可加 `relevant_docs` / `relevant_keywords` 用于检索联动。
+- 默认标注集 `server/data/cs_eval_cases.json`（39 条，覆盖 6 类意图 + 边界/长尾：大小写/带空格订单号、多意图混合、口语、emoji、纯空白等）；`--cases` 可指定自定义 JSON，缺省回退内置 8 条样例。
 - 阈值门禁：`check_thresholds` + `cs-eval --fail-under 0.9`（任一门禁指标低于阈值则退出码 1），`--json` 输出报告；已接入 GitHub Actions CI（`.github/workflows/ci.yml`）。
+- 检索评测联动：`compute_retrieval_metrics` / `evaluate_retrieval`（Recall@K/MRR），`cs-eval --with-retrieval` 对带检索标注的知识问答样例跑召回（需真实向量库），与任务评测共用同一份标注集。
 - 在线埋点指标（`/metrics`）与离线评测集互补：前者实时趋势，后者回归验证任务级正确性。
 
 ## 12. 分阶段路线
@@ -496,13 +497,13 @@ Qdrant payload 继续保存 `chapter/title/section/heading_path`；客服回答�
 - LangGraph checkpoint 生产持久化（MySQL 后端 checkpointer）：澄清/转人工中间态按 thread_id=conversation_id 持久化，重启恢复。
 - LLM 意图分类器：`llm_classifier.LLMIntentClassifier` 替换确定性规则，JSON 结构化输出（intent/confidence/slots），低置信度（<0.7）由 LLM 生成针对性追问；失败/无 key 自动回退规则分类器，`LLM_CLASSIFIER=1` 启用（默认关闭保持确定性）。
 - 客服任务评测体系：`metrics.py` 指标埋点（`evaluation_events` 表，MySQL + 内存回退）、`prom_exporter.py` Prometheus 指标暴露（`/metrics`，官方 `prometheus_client` 库）、`alerts.py` 告警（转人工率/出错率/无依据承诺率阈值判定 + webhook + `evaluation_alerts` 表）、Grafana 面板（`deploy/grafana/dashboard.json`）+ Prometheus 告警规则（`deploy/prometheus/alerts.yml`）、运营端告警面板。
-- 客服任务离线评测集：`offline_eval.py`（`evaluate_customer_service` + `check_thresholds` + `cs-eval` CLI），mock 工具跑图验证意图/工具/转人工/越权/槽位五项任务级正确性；默认标注集 `data/cs_eval_cases.json`（22 条真实语料），`--fail-under` 阈值门禁 + `--json` 报告，已纳入 CI。
+- 客服任务离线评测集：`offline_eval.py`（`evaluate_customer_service` + `check_thresholds` + `cs-eval` CLI），mock 工具跑图验证意图/工具/转人工/越权/槽位五项任务级正确性；默认标注集 `data/cs_eval_cases.json`（39 条真实语料含边界/长尾），`--fail-under` 阈值门禁 + `--json` 报告，已纳入 CI；支持 `--with-retrieval` 与 Recall@K/MRR 检索评测联动（共用同一份标注集）。
 - 安全加固（PII 脱敏）：`redactor.py` 纯正则脱敏器（手机号/身份证/邮箱/银行卡/订单号）+ Prompt/指标/API 响应三层接入（`REDACTOR_ENABLED` 开关）。
 
 ### 下一步迭代
 
 1. **真实业务只读接口**：替换演示订单源，接入真实订单/物流系统。
 2. **JWT/OAuth 生产化**：真实验证码、密码重置、令牌刷新、多租户隔离。
-3. **离线评测集进一步扩充**：继续补充边界/长尾语料，与 Recall@K/MRR 检索评测联动。
+3. **多意图混合识别**：当前规则分类器按顺序匹配，「查订单+退款」会被「订单」关键词先命中；可提升售后优先级或引入 LLM 分类器处理混合诉求。
 4. **限流、熔断与安全评测**：脱敏已落地，补充限流（Redis）、工具调用熔断、审计日志。
 5. **受控写操作**（Phase 3）：退款/改址/取消订单走「展示影响 → 确认 → 执行」三步。

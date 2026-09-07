@@ -185,7 +185,7 @@ ai-service/
 - **告警**：转人工率 / 出错率 / 无依据承诺率 三项滑动窗口阈值判定，命中落 `evaluation_alerts` 表 + 可选 webhook 推送（`ALERT_WEBHOOK_URL`）；运营端「告警」入口查看近期告警。
 - **监控配置**：`deploy/grafana/dashboard.json`（面板）+ `deploy/prometheus/alerts.yml` + `prometheus.yml`（抓取 + 告警规则），导入 Grafana 即可。
 - **阈值可配**：`ALERT_HANDOFF_RATE` / `ALERT_ERROR_RATE` / `ALERT_UNFOUNDED_RATE` / `ALERT_MIN_SAMPLES`（详见 `.env.local.example`）。
-- **离线评测集**：`python -m server.cli cs-eval` 用 mock 工具跑客服图，回归验证意图识别/工具调用/转人工判断/越权拦截/槽位收集五项任务级正确性；默认标注集 `server/data/cs_eval_cases.json`（22 条真实语料，`--cases` 指定自定义 JSON）；`--fail-under 0.9` 阈值门禁 + `--json` 报告，已接入 GitHub Actions CI（`.github/workflows/ci.yml`）。
+- **离线评测集**：`python -m server.cli cs-eval` 用 mock 工具跑客服图，回归验证意图识别/工具调用/转人工判断/越权拦截/槽位收集五项任务级正确性；默认标注集 `server/data/cs_eval_cases.json`（39 条真实语料含边界/长尾，`--cases` 指定自定义 JSON）；`--fail-under 0.9` 阈值门禁 + `--json` 报告，已接入 GitHub Actions CI（`.github/workflows/ci.yml`）。`--with-retrieval` 对带 `relevant_docs`/`relevant_keywords` 标注的知识问答样例联动跑 Recall@K/MRR（需真实向量库），与任务评测共用同一份标注集。
 
 ## 🔍 日志与链路排查（trace_id）
 
@@ -212,6 +212,7 @@ cd server
 .venv/bin/python -m server.cli cs-eval                # 客服任务离线评测（意图/工具/转人工/越权/槽位）
 .venv/bin/python -m server.cli cs-eval --fail-under 0.9   # 阈值门禁（CI 用，未达标退出码 1）
 .venv/bin/python -m server.cli cs-eval --json              # 输出 JSON 报告（含逐题明细）
+.venv/bin/python -m server.cli cs-eval --with-retrieval    # 联动检索评测 Recall@K/MRR（需向量库）
 .venv/bin/python -m server.cli doc-list               # 列出库内文档
 
 # 前端
