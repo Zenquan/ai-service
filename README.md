@@ -23,13 +23,14 @@
 | 📚 知识库管理 | 拖拽/点选上传（PDF/TXT/MD/DOCX/HTML/图片）、文档列表、chunk 数统计、单文档删除（增量不重建） | 左侧 `KnowledgePanel` |
 | 💬 知识问答 | 混合检索（关键词 + 向量 RRF 融合）→ bge-reranker 精排 → DeepSeek 生成 | 右侧 `ChatPanel`（Bubble.List + Sender） |
 | 🔗 引用溯源 | 回答强制 `[来源N]` 标记 + 程序校验越界引用；引用卡片可展开查看依据素材原文 | `AnswerView`（XMarkdown + Sources） |
-| 🧭 客服编排 | 三层路由：快速业务意图 → RAG 知识优先 → 检索无素材时澄清/转人工；多轮历史上下文 | 后端 graph 层 + services 层 |
+| 🧭 客服编排 | 三层路由：快速业务意图 → RAG 知识优先 → 检索无素材时澄清/转人工；多轮历史上下文；**多意图风险仲裁**（投诉>售后>订单>寒暄，混合诉求不再被「订单」抢先吞掉）| 后端 graph 层 + services 层 |
 | ✋ 人工接管 | AI 转人工后坐席可直接回复（`response_mode=manual`），会话进入 `manual` 状态，界面切换为人工模式 | ChatPanel + customer_service |
 | 🔐 登录认证 | demo JWT：`operator`（运营）与 `customer`（普通用户）双角色；客户消息身份取自 token，人工回复需运营角色 | auth 模块 + LoginPage/CustomerChat |
 | 🔎 只读业务工具 | 订单/物流查询走真实 LangGraph 工具节点：Pydantic 参数校验、归属校验、超时/失败显式转人工；缺单号多轮澄清（checkpoint 恢复） | 后端 tools 层 + graph 层 |
 | 💾 云端持久化 | 会话/消息落 MySQL（回退内存显性标注 `storage`）；文档切块存 MySQL，部署后自动重建向量索引 | 后端 services 层 |
 | 🛡️ 健壮性 | MinerU→markitdown→纯文本三级解析降级、云解析 sha256 缓存、LLM 超时重试、rerank 失败静默回退、空库友好回答 / 客服层无素材二次澄清后转人工 | 后端 core 层 |
-| 🔒 安全 | 上传防路径穿越（只取 basename）、扩展名白名单、密钥只存本地 `server/.env` / 云端环境变量（均不入库） | 后端 ingest 路由 |
+| 🔒 安全 | 上传防路径穿越（只取 basename）、扩展名白名单、密钥只存本地 `server/.env` / 云端环境变量（均不入库）；**PII 三层脱敏**（Prompt/指标/响应）；**限流 429 / 熔断 / 审计日志**（全 MySQL 实现，零 Redis 依赖） | 后端 ingest 路由 + services/middleware 层 |
+| 🎯 安全评测（红队） | `cs-redteam` 门禁对三类攻击语料断言「被阻断」：提示注入（`security_flag=prompt_injection` 归投诉转人工）、越权查单（归属校验 forbidden）、对抗样本（拆字/谐音/符号先归一化再匹配） | 后端 offline_eval + CLI |
 
 ## 🏗️ 系统架构
 
@@ -47,7 +48,7 @@
 │  server/main.py：应用工厂（CORS + 路由 + lifespan 云存储重建）                 │
 │  server/api/：health · docs · ingest · ask · conversations                  │
 │  server/auth/：demo 账号 + JWT 签发/校验 + operator/customer 角色依赖       │
-│  server/services/：rag 融合层 · customer_service · chat_store · doc_store   │
+│  server/services/：rag 融合层 · customer_service · chat_store · doc_store · 限流/熔断/审计/脱敏 │
 │  server/tools/：只读业务工具（订单/物流查询 + ToolResult 统一返回）           │
 │  server/graph/：LangGraph 图（rag 图 + customer_service 图，依赖注入）        │
 │  server/core/：RAG 核心（解析→切块→向量→检索→rerank→生成→引用校验）           │
@@ -126,7 +127,7 @@ ai-service/
 │   │   ├── core/                # RAG 核心：chunker/embed_store/retrieve/generate/ingest/citations/config
 │   │   └── cli.py               # CLI：python -m server.cli ingest/ask/run/eval/doc-list/doc-delete
 │   ├── tests/                   # 全量单测（core 纯函数 + 图契约 + API 接口）
-│   ├── data/                    # uploads/（前端上传）、docs/、_parse_cache/、eval_cases.json
+│   ├── data/                    # uploads/（前端上传）、docs/、_parse_cache/、评测标注集（cs_eval_cases/cs_redteam_cases）
 │   ├── qdrant_data/             # Qdrant local 向量索引
 │   └── .env / .env.example      # 密钥配置（不入库）
 ├── web/                         # 前端（Vite + React + TS + Ant Design X）
@@ -150,7 +151,7 @@ ai-service/
 | [server/README-graph.md](server/README-graph.md) | 图编排 | LangGraph 图约定与关键踩坑 |
 | [docs/architecture.md](docs/architecture.md) | 面试/接手 | 分层架构、端到端时序、关键设计决策及取舍 |
 | [docs/api.md](docs/api.md) | 联调/二次开发 | API 端点完整参考：请求/响应/错误/curl 实测 |
-| [docs/customer-service-plan.md](docs/customer-service-plan.md) | 规划 | 智能客服系统 Phase 路线与验收标准 |
+| [docs/customer-service-plan.md](docs/customer-service-plan.md) | 规划 | 智能客服系统 Phase 路线、版本里程碑（v0.1–v0.4）、验收标准与剩余迭代 |
 | [web/README.md](web/README.md) | 前端开发 | 前端技术栈、目录语义、chat-provider 原理、构建注意 |
 
 ## 🧠 面试亮点（一句话版）
@@ -159,7 +160,7 @@ ai-service/
 2. **编排与检索解耦**：LangGraph 图全部依赖注入（retriever/generator/classifier 参数化），契约测试不碰向量库与模型
 3. **优雅降级 + 显性暴露**：LangGraph 不可用回退 RAG 直答；MySQL 不可用回退内存并在响应体带 `storage` 字段；空库时友好回答而非报错
 4. **只读工具闭环**：订单/物流查询走 LangGraph 工具节点，Pydantic 入参校验 + 会话归属校验，非本人/失败显式转人工且不改写结果；缺单号由原生 checkpoint 多轮澄清补齐（MySQL 持久化，重启可恢复）
-5. **可替换意图分类器**：确定性规则分类器与 LLM 分类器同契约（`{intent, intent_confidence, slots}`），LLM 低置信度自适应追问、失败自动回退规则；`LLM_CLASSIFIER=1` 一键切换
+5. **可替换意图分类器 + 安全防线**：规则/LLM 分类器同契约（`{intent, intent_confidence, slots}`），LLM 低置信度自适应追问、失败自动回退规则；规则层支持多意图风险仲裁（投诉>售后>订单>寒暄）、提示注入检测（`security_flag`）与对抗样本归一化（拆字/混淆符号不绕过）；`LLM_CLASSIFIER=1` 一键切换
 6. **云端持久化双保险**：会话消息落 MySQL；文档切块同步存 MySQL，服务启动 lifespan 自动重建向量索引——重新部署不丢数据
 7. **Qdrant local 免 Docker**：与生产远端同 API；单进程锁用 `threading.Lock` + `--workers 1`
 8. **混合检索 RRF**：标题加权 BM25（中文 2-gram + 英文词）与语义向量双路召回 → 排名倒数融合
@@ -175,6 +176,8 @@ ai-service/
   - 接口层：FastAPI TestClient，打桩服务层（health/docs/ingest 白名单与防穿越/ask 参数与错误透传/会话 API）
   - 评测与告警：指标埋点 / Prometheus 暴露聚合 / 告警阈值判定（转人工率/出错率/无依据承诺率）
   - 安全脱敏：手机号/身份证/邮箱/银行卡/订单号 PII 脱敏（Prompt/指标/响应三层）
+  - 多意图与安全：`detect_intents` 风险优先级仲裁、提示注入检测（`_INJECTION_PATTERNS`）、对抗样本归一化、红队评测 `evaluate_redteam`（`test_multi_intent.py`/`test_redteam.py`）
+  - 可靠性组件：限流（固定窗口原子计数）/ 熔断（closed/open/half-open 状态机）/ 审计日志（trace_id 关联）（`test_rate_limit.py`/`test_circuit_breaker.py`/`test_audit_log.py`）
 - **端到端实测**：health ✓ / 上传入库 ✓ / 文档列表与删除 ✓ / ask（"什么是 AI Agent？"）回答 + 引用校验 ✓ / 会话消息 storage=mysql 落库 ✓ / 部署重启后向量索引自动重建 ✓
 - **前端**：`tsc --noEmit` 类型检查通过；`vite build` 可出产物
 
@@ -185,7 +188,8 @@ ai-service/
 - **告警**：转人工率 / 出错率 / 无依据承诺率 三项滑动窗口阈值判定，命中落 `evaluation_alerts` 表 + 可选 webhook 推送（`ALERT_WEBHOOK_URL`）；运营端「告警」入口查看近期告警。
 - **监控配置**：`deploy/grafana/dashboard.json`（面板）+ `deploy/prometheus/alerts.yml` + `prometheus.yml`（抓取 + 告警规则），导入 Grafana 即可。
 - **阈值可配**：`ALERT_HANDOFF_RATE` / `ALERT_ERROR_RATE` / `ALERT_UNFOUNDED_RATE` / `ALERT_MIN_SAMPLES`（详见 `.env.local.example`）。
-- **离线评测集**：`python -m server.cli cs-eval` 用 mock 工具跑客服图，回归验证意图识别/工具调用/转人工判断/越权拦截/槽位收集五项任务级正确性；默认标注集 `server/data/cs_eval_cases.json`（39 条真实语料含边界/长尾，`--cases` 指定自定义 JSON）；`--fail-under 0.9` 阈值门禁 + `--json` 报告，已接入 GitHub Actions CI（`.github/workflows/ci.yml`）。`--with-retrieval` 对带 `relevant_docs`/`relevant_keywords` 标注的知识问答样例联动跑 Recall@K/MRR（需真实向量库），与任务评测共用同一份标注集。
+- **离线评测集**：`python -m server.cli cs-eval` 用 mock 工具跑客服图，回归验证意图识别/工具调用/转人工判断/越权拦截/槽位收集五项任务级正确性；默认标注集 `server/data/cs_eval_cases.json`（57 条真实语料含边界/长尾与 10 条检索标注，`--cases` 指定自定义 JSON）；`--fail-under 0.9` 阈值门禁 + `--json` 报告，已接入 GitHub Actions CI（`.github/workflows/ci.yml`）。`--with-retrieval` 对带 `relevant_docs`/`relevant_keywords` 标注的知识问答样例联动跑 Recall@K/MRR（需真实向量库），实测 Recall@1/3/5=1.0、MRR=1.0。
+- **红队安全评测**：`python -m server.cli cs-redteam` 对三类攻击语料 `server/data/cs_redteam_cases.json`（提示注入 6 / 越权 2 / 对抗样本 5）逐题断言「被阻断/不泄露」，聚合 `redteam_block_rate`（安全阻断率，实测 1.0）作 CI 门禁；攻击手法随迭代持续扩充。
 
 ## 🔍 日志与链路排查（trace_id）
 
@@ -213,6 +217,7 @@ cd server
 .venv/bin/python -m server.cli cs-eval --fail-under 0.9   # 阈值门禁（CI 用，未达标退出码 1）
 .venv/bin/python -m server.cli cs-eval --json              # 输出 JSON 报告（含逐题明细）
 .venv/bin/python -m server.cli cs-eval --with-retrieval    # 联动检索评测 Recall@K/MRR（需向量库）
+.venv/bin/python -m server.cli cs-redteam --fail-under 0.9 # 红队安全评测门禁（注入/越权/对抗样本，CI 用）
 .venv/bin/python -m server.cli doc-list               # 列出库内文档
 
 # 前端
@@ -222,3 +227,15 @@ cd web && pnpm lint && pnpm build
 # 控制台：绑定 GitHub 仓库 → 服务选择 master 分支并开启自动部署 → Dockerfile 选仓库根目录 Dockerfile
 # 密钥与数据库连接（DEEPSEEK_API_KEY / MYSQL_* / EMBED_* 等）在云托管环境变量中配置，不写入镜像
 ```
+
+## 🗺️ 迭代路线（Roadmap）
+
+> 当前进度：Phase 0 → Phase 2 安全/正确性（P0）已全部收口，GitHub Actions CI 全绿（红队安全评测门禁 `cs-redteam` 已纳入）。完整规划见 [docs/customer-service-plan.md](docs/customer-service-plan.md) §14「版本里程碑总览」。
+
+| 版本 | 范围 | 状态 |
+| --- | --- | --- |
+| **v0.1** | Phase 0–1 客服 MVP：三层路由、订单/售后/投诉安全分流、SSE、人工接管、MySQL 持久化、checkpoint 恢复 | ✅ 已交付 |
+| **v0.2** | Phase 2 生产化与安全（P0 收口）：JWT、评测体系、PII 脱敏、多意图识别、限流/熔断/审计（MySQL）、红队评测 | ✅ 已交付 |
+| **v0.3** | P1 业务真实化：真实订单/物流只读接口、JWT/OAuth 生产化、MySQL 表扩展 | ⬜ 下一步 |
+| **v0.4** | Phase 3 业务闭环：受控写操作、售后流程 + 工单、坐席工作台增强 | ⬜ 待启动 |
+| **持续** | 红队语料与防线演进（谐音/编码/多轮注入、LLM 注入检测） | 🔁 已入 CI |
