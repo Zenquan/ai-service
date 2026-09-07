@@ -1,0 +1,143 @@
+[
+  {
+    "question": "你好，在吗？",
+    "intent": "greeting",
+    "must_handoff": false
+  },
+  {
+    "question": "您好，我想咨询一个问题",
+    "intent": "greeting",
+    "must_handoff": false
+  },
+  {
+    "question": "什么是 AI Agent？",
+    "intent": "knowledge_question",
+    "expected_tools": [],
+    "must_handoff": false
+  },
+  {
+    "question": "RAG 防幻觉的关键是什么？",
+    "intent": "knowledge_question",
+    "expected_tools": [],
+    "must_handoff": false
+  },
+  {
+    "question": "帮我查一下订单 A00001 的物流到哪了",
+    "intent": "order_query",
+    "expected_tools": ["query_order_status"],
+    "required_slots": ["order_no"],
+    "must_handoff": false,
+    "user_id": "demo-user"
+  },
+  {
+    "question": "我的快递 A00001 现在是什么状态",
+    "intent": "order_query",
+    "expected_tools": ["query_order_status"],
+    "required_slots": ["order_no"],
+    "must_handoff": false,
+    "user_id": "demo-user"
+  },
+  {
+    "question": "订单 A00001 发货了吗",
+    "intent": "order_query",
+    "expected_tools": ["query_order_status"],
+    "required_slots": ["order_no"],
+    "must_handoff": false,
+    "user_id": "demo-user"
+  },
+  {
+    "question": "帮我查一下订单 A00001 的物流",
+    "intent": "order_query",
+    "expected_tools": ["query_order_status"],
+    "must_handoff": true,
+    "user_id": "alice"
+  },
+  {
+    "question": "查一下订单 B00001 的配送进度",
+    "intent": "order_query",
+    "expected_tools": ["query_order_status"],
+    "must_handoff": false,
+    "user_id": "alice"
+  },
+  {
+    "question": "帮我查订单物流",
+    "intent": "order_query",
+    "expected_tools": [],
+    "must_handoff": false
+  },
+  {
+    "question": "我的包裹什么时候能到",
+    "intent": "knowledge_question",
+    "expected_tools": [],
+    "must_handoff": false
+  },
+  {
+    "question": "查一下订单 XYZ999999 的物流",
+    "intent": "order_query",
+    "expected_tools": ["query_order_status"],
+    "must_handoff": true,
+    "user_id": "demo-user"
+  },
+  {
+    "question": "我要退款",
+    "intent": "after_sale",
+    "expected_tools": [],
+    "must_handoff": true
+  },
+  {
+    "question": "这个商品质量有问题，我要退货",
+    "intent": "after_sale",
+    "expected_tools": [],
+    "must_handoff": true
+  },
+  {
+    "question": "我要换货，尺码不对",
+    "intent": "after_sale",
+    "expected_tools": [],
+    "must_handoff": true
+  },
+  {
+    "question": "我要投诉你们，太坑了",
+    "intent": "complaint",
+    "expected_tools": [],
+    "must_handoff": true
+  },
+  {
+    "question": "你们就是骗子，我要举报",
+    "intent": "complaint",
+    "expected_tools": [],
+    "must_handoff": true
+  },
+  {
+    "question": "嗯",
+    "intent": "unknown",
+    "expected_tools": [],
+    "forbidden_actions": ["query_order_status"],
+    "must_handoff": false
+  },
+  {
+    "question": "啊？",
+    "intent": "unknown",
+    "expected_tools": [],
+    "forbidden_actions": ["query_order_status"],
+    "must_handoff": false
+  },
+  {
+    "question": "你们有没有优惠券可以领",
+    "intent": "knowledge_question",
+    "expected_tools": [],
+    "must_handoff": false
+  },
+  {
+    "question": "发票什么时候能开",
+    "intent": "knowledge_question",
+    "expected_tools": [],
+    "must_handoff": false
+  },
+  {
+    "question": "怎么修改收货地址",
+    "intent": "order_query",
+    "expected_tools": [],
+    "must_handoff": false
+  }
+]
