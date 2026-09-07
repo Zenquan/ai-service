@@ -13,13 +13,17 @@
     "question": "什么是 AI Agent？",
     "intent": "knowledge_question",
     "expected_tools": [],
-    "must_handoff": false
+    "must_handoff": false,
+    "relevant_docs": ["01-AI-Agent入门.md"],
+    "relevant_keywords": ["Agent", "智能体"]
   },
   {
     "question": "RAG 防幻觉的关键是什么？",
     "intent": "knowledge_question",
     "expected_tools": [],
-    "must_handoff": false
+    "must_handoff": false,
+    "relevant_docs": ["02-RAG原理.md"],
+    "relevant_keywords": ["引用", "来源"]
   },
   {
     "question": "帮我查一下订单 A00001 的物流到哪了",
@@ -139,5 +143,127 @@
     "intent": "order_query",
     "expected_tools": [],
     "must_handoff": false
+  },
+
+  {
+    "question": "AI Agent 和普通聊天机器人有什么区别？",
+    "intent": "knowledge_question",
+    "expected_tools": [],
+    "must_handoff": false,
+    "relevant_docs": ["01-AI-Agent入门.md"],
+    "relevant_keywords": ["聊天机器人", "自主"]
+  },
+  {
+    "question": "RAG 检索增强生成是什么意思？",
+    "intent": "knowledge_question",
+    "expected_tools": [],
+    "must_handoff": false,
+    "relevant_docs": ["02-RAG原理.md"],
+    "relevant_keywords": ["检索", "向量"]
+  },
+  {
+    "question": "AI Agent 怎么调用外部工具？",
+    "intent": "knowledge_question",
+    "expected_tools": [],
+    "must_handoff": false,
+    "relevant_docs": ["01-AI-Agent入门.md"],
+    "relevant_keywords": ["工具", "调用"]
+  },
+
+  {
+    "question": "hello，能帮我查一下 A00001 的快递吗",
+    "intent": "greeting",
+    "must_handoff": false
+  },
+  {
+    "question": "帮我查下订单a00001到哪了",
+    "intent": "order_query",
+    "expected_tools": ["query_order_status"],
+    "required_slots": ["order_no"],
+    "must_handoff": false,
+    "user_id": "demo-user"
+  },
+  {
+    "question": "  查 订 单  A00001 物流  ",
+    "intent": "order_query",
+    "expected_tools": ["query_order_status"],
+    "required_slots": ["order_no"],
+    "must_handoff": false,
+    "user_id": "demo-user"
+  },
+  {
+    "question": "查订单 ORD20260901001 的物流",
+    "intent": "order_query",
+    "expected_tools": ["query_order_status"],
+    "required_slots": ["order_no"],
+    "must_handoff": true,
+    "user_id": "demo-user"
+  },
+  {
+    "question": "我既要查订单 A00001 物流，还要退款",
+    "intent": "order_query",
+    "expected_tools": ["query_order_status"],
+    "required_slots": ["order_no"],
+    "must_handoff": false,
+    "user_id": "demo-user",
+    "_note": "多意图混合：当前规则分类器按顺序匹配，'订单'关键词先于'退款'命中，归为 order_query。理想应识别售后诉求转人工，属已知局限。"
+  },
+  {
+    "question": "你好，我想退个货",
+    "intent": "greeting",
+    "must_handoff": false
+  },
+  {
+    "question": "😡 你们太差劲了，我要投诉",
+    "intent": "complaint",
+    "expected_tools": [],
+    "must_handoff": true
+  },
+  {
+    "question": "这个商品质量有问题，能维修吗？",
+    "intent": "after_sale",
+    "expected_tools": [],
+    "must_handoff": true
+  },
+  {
+    "question": "你们发不发货了，太慢了，我要催发货",
+    "intent": "order_query",
+    "expected_tools": [],
+    "must_handoff": false
+  },
+  {
+    "question": "咋回事儿啊，物流一直不动",
+    "intent": "order_query",
+    "expected_tools": [],
+    "must_handoff": false
+  },
+  {
+    "question": "   ",
+    "intent": "unknown",
+    "expected_tools": [],
+    "forbidden_actions": ["query_order_status"],
+    "must_handoff": false
+  },
+  {
+    "question": "。。。",
+    "intent": "unknown",
+    "expected_tools": [],
+    "forbidden_actions": ["query_order_status"],
+    "must_handoff": false
+  },
+  {
+    "question": "你们这平台是不是骗人的，赔偿我损失",
+    "intent": "complaint",
+    "expected_tools": [],
+    "must_handoff": true
+  },
+  {
+    "question": "帮我查一下订单 A00001 的物流，另外这个商品质量有问题想退货",
+    "intent": "order_query",
+    "expected_tools": ["query_order_status"],
+    "required_slots": ["order_no"],
+    "must_handoff": false,
+    "user_id": "demo-user",
+    "_note": "多意图混合：'订单'关键词先命中归 order_query，售后诉求未识别。已知局限。"
   }
 ]
