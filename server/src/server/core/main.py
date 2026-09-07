@@ -299,6 +299,8 @@ def main() -> None:
     p_eval.add_argument("--rerank", action="store_true", help="评估时启用已配置的 rerank")
     p_eval.add_argument("--rerank-threshold", type=float, default=None, help="rerank 最低相关性分数")
     p_eval.add_argument("--ks", nargs="+", type=int, default=[1, 3, 5], help="计算哪些 K 值")
+    p_cs_eval = sub.add_parser("cs-eval", help="客服任务离线评测（意图/工具/转人工/越权/槽位）")
+    p_cs_eval.add_argument("--cases", type=str, default=None, help="标注集 JSON 路径（默认 data/cs_eval_cases.json，缺省用内置样例）")
     sub.add_parser("doc-list", help="列出库内文档及 chunk 数")
     p_docdel = sub.add_parser("doc-delete", help="删除单个文档（不用全量重建）")
     p_docdel.add_argument("doc", help="文档名（如 rag-test-pdfs/DeepFace-ICCV2017.pdf）")
@@ -327,6 +329,27 @@ def main() -> None:
         print(f"\n命中率: {ev['hit']}/{ev['total']} = {ev['rate'] * 100:.0f}%")
         print(" ".join(f"Recall@{k}={ev['recall_at_k'][str(k)]:.3f}" for k in args.ks))
         print(f"MRR={ev['mrr']:.3f}")
+    elif args.cmd == "cs-eval":
+        # 延迟导入：离线评测器 import graph 层，避免 CLI 启动即拉 LangGraph。
+        from .offline_eval import evaluate_customer_service
+
+        cases_path = Path(args.cases) if args.cases else (config.SERVER_ROOT / "data" / "cs_eval_cases.json")
+        result = evaluate_customer_service(cases_path=cases_path)
+        for c in result["cases"]:
+            mark = "✅" if (c["intent_ok"] and c["tool_ok"] and c["handoff_ok"] and c["slots_ok"]) else "❌"
+            print(f"  {mark} [{c['actual_intent'] or '?'}] {c['question']}")
+            if not c["intent_ok"]:
+                print(f"      意图错：期望 {c['expected_intent']}，实际 {c['actual_intent']}")
+            if not c["tool_ok"]:
+                print(f"      工具错：期望 {c['expected_tools']}，实际 {c['called_tools']}")
+            if not c["handoff_ok"]:
+                print(f"      转人工判断错：期望 {c['must_handoff']}，实际 {c['needs_human']}")
+        print(f"\n意图准确率: {result['intent_accuracy']:.0%}")
+        print(f"工具调用正确率: {result['tool_accuracy']:.0%}")
+        print(f"越权拦截率: {result['forbidden_blocked_rate']:.0%}")
+        print(f"转人工判断准确率: {result['handoff_accuracy']:.0%}")
+        print(f"槽位收集完成率: {result['slot_completion_rate']:.0%}")
+        print(f"一次解决率: {result['first_resolution_rate']:.0%}")
     elif args.cmd == "doc-list":
         docs = list_docs()
         if not docs:
