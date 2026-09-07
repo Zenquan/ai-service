@@ -34,6 +34,126 @@ _INTENTS = {
 }
 
 
+# ── 检索评测联动（Recall@K / MRR）──────────────────────────────────────
+# 与 core.main.evaluate 的检索标注语义对齐：knowledge_question 样例可携带
+# ``relevant_docs`` / ``relevant_keywords`` / ``relevant``（精确 chunk），
+# 让同一份标注集既能跑客服任务评测，又能跑检索召回评测。
+def _retrieval_doc_matches(actual: str, expected: str) -> bool:
+    ap, ep = Path(actual), Path(expected)
+    return actual == expected or ap.name == ep.name or actual.endswith(expected)
+
+
+def _retrieval_case_relevant(item: dict, case: dict) -> bool:
+    labels = case.get("relevant") or case.get("relevant_chunks")
+    if labels:
+        return any(
+            _retrieval_doc_matches(item.get("doc", ""), label["doc"])
+            and ("seq" not in label or item.get("seq") == label["seq"])
+            for label in labels
+        )
+    expected_docs = case.get("relevant_docs") or case.get("expect_doc") or []
+    if expected_docs:
+        return any(_retrieval_doc_matches(item.get("doc", ""), doc) for doc in expected_docs)
+    expected_keywords = case.get("relevant_keywords") or case.get("expect_kw") or []
+    text = item.get("text", "").lower()
+    return any(kw.lower() in text for kw in expected_keywords)
+
+
+def _retrieval_label_count(case: dict) -> int:
+    labels = case.get("relevant") or case.get("relevant_chunks")
+    if labels:
+        return len(labels)
+    expected_docs = case.get("relevant_docs") or case.get("expect_doc") or []
+    if expected_docs:
+        return len(set(expected_docs))
+    return 1 if case.get("relevant_keywords") or case.get("expect_kw") else 0
+
+
+def _retrieval_recall_at_k(mats: list[dict], case: dict, k: int) -> float:
+    label_count = _retrieval_label_count(case)
+    if not label_count:
+        return 0.0
+    labels = case.get("relevant") or case.get("relevant_chunks")
+    if labels:
+        found = sum(
+            1
+            for label in labels
+            if any(
+                _retrieval_doc_matches(item.get("doc", ""), label["doc"])
+                and ("seq" not in label or item.get("seq") == label["seq"])
+                for item in mats[:k]
+            )
+        )
+    else:
+        expected_docs = case.get("relevant_docs") or case.get("expect_doc") or []
+        if expected_docs:
+            found = sum(
+                1
+                for doc in set(expected_docs)
+                if any(_retrieval_doc_matches(item.get("doc", ""), doc) for item in mats[:k])
+            )
+        else:
+            found = int(any(_retrieval_case_relevant(item, case) for item in mats[:k]))
+    return found / label_count
+
+
+def compute_retrieval_metrics(
+    mats: list[dict], case: dict, ks: tuple[int, ...] = (1, 3, 5)
+) -> dict:
+    """对单条样例的检索结果计算 Recall@K / MRR（纯函数，供联动与单测复用）。
+
+    ``mats`` 为检索返回的 item 列表（字段 ``doc``/``text``/``seq``），
+    ``case`` 携带 ``relevant_docs`` / ``relevant_keywords`` / ``relevant`` 标注。
+    """
+    ks = tuple(sorted({max(1, int(k)) for k in ks}))
+    recalls = {str(k): _retrieval_recall_at_k(mats, case, k) for k in ks}
+    ranks = [i + 1 for i, item in enumerate(mats) if _retrieval_case_relevant(item, case)]
+    return {
+        "recall_at_k": recalls,
+        "first_relevant_rank": ranks[0] if ranks else None,
+        "mrr": 1 / ranks[0] if ranks else 0.0,
+    }
+
+
+def evaluate_retrieval(
+    cases: list[dict],
+    retriever,
+    ks: tuple[int, ...] = (1, 3, 5),
+) -> dict:
+    """对标注了检索字段的样例跑 Recall@K / MRR（知识问答类）。
+
+    ``retriever(query, top_k)`` 返回 item 列表；只消费带 ``relevant_docs`` /
+    ``relevant_keywords`` / ``relevant`` 的样例，其余跳过。
+    """
+    ks = tuple(sorted({max(1, int(k)) for k in ks}))
+    max_k = max(ks, default=5)
+    relevant_cases = [c for c in cases if (
+        c.get("relevant_docs") or c.get("relevant_keywords")
+        or c.get("relevant") or c.get("relevant_chunks")
+    )]
+    detail = []
+    for c in relevant_cases:
+        mats = retriever(c["question"], top_k=max_k) or []
+        m = compute_retrieval_metrics(mats, c, ks)
+        detail.append({
+            "question": c["question"],
+            "recall_at_k": m["recall_at_k"],
+            "first_relevant_rank": m["first_relevant_rank"],
+            "mrr": m["mrr"],
+        })
+
+    recall_at_k = {
+        str(k): sum(d["recall_at_k"][str(k)] for d in detail) / len(detail) if detail else 0.0
+        for k in ks
+    }
+    return {
+        "total": len(relevant_cases),
+        "recall_at_k": recall_at_k,
+        "mrr": sum(d["mrr"] for d in detail) / len(detail) if detail else 0.0,
+        "cases": detail,
+    }
+
+
 def _make_retriever(contexts: list[dict] | None = None):
     contexts = contexts or []
 
@@ -135,10 +255,15 @@ def _evaluate_case(case: dict, agent, index: int) -> dict:
 def evaluate_customer_service(
     cases: list[dict] | None = None,
     cases_path: Path | None = None,
+    retriever=None,
+    ks: tuple[int, ...] = (1, 3, 5),
 ) -> dict:
-    """跑客服任务离线评测，返回聚合指标 + 逐题明细。
+    """跑客服任务离线评测，返回聚合指标 + 逐题明细（+ 可选检索联动子结果）。
 
     ``cases`` 直接传标注集；否则读 ``cases_path`` JSON；都没有则用内置样例。
+    ``retriever`` 传入时，对标注了 ``relevant_docs`` / ``relevant_keywords`` /
+    ``relevant`` 的样例额外跑 Recall@K / MRR，结果挂在 ``retrieval`` 键；
+    不传则不跑检索联动（任务评测用 mock retriever，不影响检索指标）。
     """
     if cases is None:
         cases = []
@@ -147,8 +272,10 @@ def evaluate_customer_service(
     if not cases:
         cases = DEFAULT_CASES
 
+    # 任务评测用 mock retriever（保证可复现、不依赖真实向量库）
+    mock_retriever = _make_retriever([{"text": "客服知识依据", "doc": "kb.md", "seq": 0}])
     agent = create_customer_service_agent(
-        retriever=_make_retriever([{"text": "客服知识依据", "doc": "kb.md", "seq": 0}]),
+        retriever=mock_retriever,
         generator=_make_generator("根据知识库，为您解答[1]"),
         # order_tool 通过 build_customer_service_graph 的默认分支走 DemoOrderStore；
         # 这里显式注入 mock，保证不依赖演示订单源的 user_id 细节。
@@ -157,7 +284,7 @@ def evaluate_customer_service(
     from server.graph.customer_service.graph import build_customer_service_graph
 
     agent.graph = build_customer_service_graph(
-        retriever=_make_retriever([{"text": "客服知识依据", "doc": "kb.md", "seq": 0}]),
+        retriever=mock_retriever,
         generator=_make_generator("根据知识库，为您解答[1]"),
         order_tool=_make_order_tool(),
     )
@@ -168,7 +295,7 @@ def evaluate_customer_service(
     def _rate(pred) -> float:
         return sum(1 for d in detail if pred(d)) / total if total else 0.0
 
-    return {
+    result = {
         "total": total,
         "intent_accuracy": _rate(lambda d: d["intent_ok"]),
         "tool_accuracy": _rate(lambda d: d["tool_ok"]),
@@ -178,6 +305,9 @@ def evaluate_customer_service(
         "first_resolution_rate": _rate(lambda d: d["resolved"]),
         "cases": detail,
     }
+    if retriever is not None:
+        result["retrieval"] = evaluate_retrieval(cases, retriever, ks=ks)
+    return result
 
 
 # ── 内置标注集样例（覆盖 plan §11 各维度）──
@@ -243,6 +373,8 @@ def check_thresholds(result: dict, thresholds: dict[str, float]) -> list[str]:
 
 __all__ = [
     "evaluate_customer_service",
+    "evaluate_retrieval",
+    "compute_retrieval_metrics",
     "check_thresholds",
     "DEFAULT_CASES",
 ]

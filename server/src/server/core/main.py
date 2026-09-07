@@ -303,6 +303,7 @@ def main() -> None:
     p_cs_eval.add_argument("--cases", type=str, default=None, help="标注集 JSON 路径（默认 data/cs_eval_cases.json，缺省用内置样例）")
     p_cs_eval.add_argument("--json", action="store_true", help="输出 JSON 报告（含逐题明细），供 CI 采集")
     p_cs_eval.add_argument("--fail-under", type=float, default=None, help="所有指标最低阈值（任一低于则退出码 1，用于 CI 门禁）")
+    p_cs_eval.add_argument("--with-retrieval", action="store_true", help="联动检索评测：对带检索标注的样例跑 Recall@K/MRR（需真实向量库）")
     sub.add_parser("doc-list", help="列出库内文档及 chunk 数")
     p_docdel = sub.add_parser("doc-delete", help="删除单个文档（不用全量重建）")
     p_docdel.add_argument("doc", help="文档名（如 rag-test-pdfs/DeepFace-ICCV2017.pdf）")
@@ -337,9 +338,11 @@ def main() -> None:
         import sys as _sys
 
         from .offline_eval import check_thresholds, evaluate_customer_service
+        from .retrieve import retrieve as _retrieve
 
         cases_path = Path(args.cases) if args.cases else (config.SERVER_ROOT / "data" / "cs_eval_cases.json")
-        result = evaluate_customer_service(cases_path=cases_path)
+        retriever = _retrieve if args.with_retrieval else None
+        result = evaluate_customer_service(cases_path=cases_path, retriever=retriever)
 
         if args.json:
             print(_json.dumps(result, ensure_ascii=False, indent=2))
@@ -359,6 +362,12 @@ def main() -> None:
             print(f"转人工判断准确率: {result['handoff_accuracy']:.0%}")
             print(f"槽位收集完成率: {result['slot_completion_rate']:.0%}")
             print(f"一次解决率: {result['first_resolution_rate']:.0%}")
+
+            if "retrieval" in result:
+                r = result["retrieval"]
+                print(f"\n── 检索联动（{r['total']} 条知识问答样例）──")
+                print(" ".join(f"Recall@{k}={r['recall_at_k'][str(k)]:.3f}" for k in r["recall_at_k"]))
+                print(f"MRR={r['mrr']:.3f}")
 
         if args.fail_under is not None:
             thresholds = {k: args.fail_under for k in (

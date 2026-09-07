@@ -8,7 +8,13 @@
 """
 from __future__ import annotations
 
-from server.core.offline_eval import check_thresholds, evaluate_customer_service, DEFAULT_CASES
+from server.core.offline_eval import (
+    check_thresholds,
+    compute_retrieval_metrics,
+    evaluate_customer_service,
+    evaluate_retrieval,
+    DEFAULT_CASES,
+)
 
 
 def test_builtin_cases_all_green():
@@ -97,3 +103,74 @@ def test_check_thresholds_pass_and_fail():
     assert "intent_accuracy" in failures[0]
     # 未知指标名应被忽略（不报错）
     assert check_thresholds(result, {"nonexistent": 0.9}) == []
+
+
+def test_compute_retrieval_metrics_relevant_docs():
+    mats = [
+        {"text": "AI Agent 智能体", "doc": "01-AI-Agent入门.md", "seq": 0},
+        {"text": "RAG 检索", "doc": "02-RAG原理.md", "seq": 0},
+    ]
+    case = {"question": "什么是 AI Agent？", "relevant_docs": ["01-AI-Agent入门.md"]}
+    m = compute_retrieval_metrics(mats, case, ks=(1, 3))
+    assert m["recall_at_k"]["1"] == 1.0
+    assert m["first_relevant_rank"] == 1
+    assert m["mrr"] == 1.0
+
+
+def test_compute_retrieval_metrics_rank_not_first():
+    mats = [
+        {"text": "无关内容", "doc": "other.md", "seq": 0},
+        {"text": "AI Agent 智能体", "doc": "01-AI-Agent入门.md", "seq": 0},
+    ]
+    case = {"question": "什么是 AI Agent？", "relevant_docs": ["01-AI-Agent入门.md"]}
+    m = compute_retrieval_metrics(mats, case, ks=(1, 3))
+    assert m["recall_at_k"]["1"] == 0.0      # 首位未命中
+    assert m["recall_at_k"]["3"] == 1.0      # 前 3 命中
+    assert m["first_relevant_rank"] == 2
+    assert m["mrr"] == 0.5
+
+
+def test_compute_retrieval_metrics_keyword_fallback():
+    mats = [{"text": "这里是检索和向量的介绍", "doc": "x.md", "seq": 0}]
+    case = {"question": "RAG？", "relevant_keywords": ["检索"]}
+    m = compute_retrieval_metrics(mats, case, ks=(1,))
+    assert m["recall_at_k"]["1"] == 1.0
+
+
+def test_evaluate_retrieval_skips_unlabeled():
+    cases = [
+        {"question": "什么是 AI Agent？", "relevant_docs": ["01-AI-Agent入门.md"]},
+        {"question": "我要退款", "intent": "after_sale"},  # 无检索标注，跳过
+    ]
+    def retriever(query, top_k=5):
+        return [{"text": "AI Agent", "doc": "01-AI-Agent入门.md", "seq": 0}]
+
+    r = evaluate_retrieval(cases, retriever, ks=(1, 3))
+    assert r["total"] == 1          # 只统计带检索标注的 1 条
+    assert r["recall_at_k"]["1"] == 1.0
+
+
+def test_evaluate_customer_service_with_retrieval():
+    kb = [
+        {"text": "AI Agent 智能体", "doc": "01-AI-Agent入门.md", "seq": 0},
+        {"text": "RAG 检索引用来源", "doc": "02-RAG原理.md", "seq": 0},
+    ]
+    def retriever(query, top_k=5):
+        if "agent" in query.lower():
+            return [kb[0], kb[1]][:top_k]
+        if "rag" in query.lower():
+            return [kb[1], kb[0]][:top_k]
+        return kb[:top_k]
+
+    cases = [
+        {"question": "什么是 AI Agent？", "intent": "knowledge_question",
+         "expected_tools": [], "must_handoff": False, "relevant_docs": ["01-AI-Agent入门.md"]},
+        {"question": "RAG 防幻觉？", "intent": "knowledge_question",
+         "expected_tools": [], "must_handoff": False, "relevant_docs": ["02-RAG原理.md"]},
+    ]
+    result = evaluate_customer_service(cases=cases, retriever=retriever)
+    assert "retrieval" in result
+    assert result["retrieval"]["total"] == 2
+    assert result["retrieval"]["mrr"] == 1.0
+    # 任务指标不受检索联动影响
+    assert result["intent_accuracy"] == 1.0
