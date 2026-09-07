@@ -172,8 +172,12 @@
 
   {
     "question": "hello，能帮我查一下 A00001 的快递吗",
-    "intent": "greeting",
-    "must_handoff": false
+    "intent": "order_query",
+    "expected_tools": ["query_order_status"],
+    "required_slots": ["order_no"],
+    "must_handoff": false,
+    "user_id": "demo-user",
+    "_note": "多意图（hello 寒暄+查订单）：风险优先级仲裁为 order_query，正常查单。"
   },
   {
     "question": "帮我查下订单a00001到哪了",
@@ -201,12 +205,11 @@
   },
   {
     "question": "我既要查订单 A00001 物流，还要退款",
-    "intent": "order_query",
-    "expected_tools": ["query_order_status"],
-    "required_slots": ["order_no"],
-    "must_handoff": false,
+    "intent": "after_sale",
+    "expected_tools": [],
+    "must_handoff": true,
     "user_id": "demo-user",
-    "_note": "多意图混合：当前规则分类器按顺序匹配，'订单'关键词先于'退款'命中，归为 order_query。理想应识别售后诉求转人工，属已知局限。"
+    "_note": "多意图混合（订单查询+退款）：按风险优先级仲裁为 after_sale，转人工处理。"
   },
   {
     "question": "你好，我想退个货",
@@ -259,12 +262,11 @@
   },
   {
     "question": "帮我查一下订单 A00001 的物流，另外这个商品质量有问题想退货",
-    "intent": "order_query",
-    "expected_tools": ["query_order_status"],
-    "required_slots": ["order_no"],
-    "must_handoff": false,
+    "intent": "after_sale",
+    "expected_tools": [],
+    "must_handoff": true,
     "user_id": "demo-user",
-    "_note": "多意图混合：'订单'关键词先命中归 order_query，售后诉求未识别。已知局限。"
+    "_note": "多意图混合（订单查询+退货）：按风险优先级仲裁为 after_sale，转人工处理。"
   },
 
   {
@@ -343,10 +345,10 @@
 
   {
     "question": "你们这物流也太慢了吧，能不能退款",
-    "intent": "order_query",
+    "intent": "after_sale",
     "expected_tools": [],
-    "must_handoff": false,
-    "_note": "长尾多意图：'物流'关键词先于'退款'命中归 order_query；缺单号走澄清，售后诉求未识别。已知局限。"
+    "must_handoff": true,
+    "_note": "长尾多意图（物流吐槽+退款）：按风险优先级仲裁为 after_sale，转人工处理。"
   },
   {
     "question": "请问人工客服怎么联系",

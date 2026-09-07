@@ -47,8 +47,11 @@ _SYSTEM = (
     "- unknown：无法判断意图\n\n"
     "同时抽取可用槽位（slots）：order_query 场景抽取订单号（如 A00001，形如字母+5位数字）。\n"
     "再给出置信度 confidence（0~1 的小数）。\n"
+    "如果用户一条消息同时表达了多个意图（例如既查订单又要求退款），请：\n"
+    "- 在 intents 数组里列出所有命中的意图；\n"
+    "- intent 取风险最高的那个作为主意图（优先级：complaint > after_sale > order_query > greeting）。\n"
     "只输出 JSON，不要输出任何其他文字。格式：\n"
-    '{"intent": "<意图>", "confidence": <0~1>, "slots": {"order_no": "<订单号或空>"}}'
+    '{"intent": "<主意图>", "confidence": <0~1>, "slots": {"order_no": "<订单号或空>"}, "intents": ["<命中的全部意图>"]}'
 )
 
 
@@ -82,7 +85,15 @@ def _sanitize(parsed: dict) -> dict:
     slots = parsed.get("slots") or {}
     if not isinstance(slots, dict):
         slots = {}
-    return {"intent": intent, "intent_confidence": confidence, "slots": slots}
+    result = {"intent": intent, "intent_confidence": confidence, "slots": slots}
+    # 多意图：LLM 可选输出 intents 数组；非法/缺省时回退单意图，保证契约稳定。
+    intents = parsed.get("intents")
+    if isinstance(intents, list):
+        valid = [i for i in intents if i in _VALID_INTENTS]
+        if valid:
+            result["intents"] = valid
+            result["is_multi_intent"] = len(valid) > 1
+    return result
 
 
 class LLMIntentClassifier:

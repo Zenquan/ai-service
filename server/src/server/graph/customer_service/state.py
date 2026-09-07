@@ -31,6 +31,9 @@ class CustomerServiceState(TypedDict, total=False):
     intent: Intent
     intent_confidence: float
     slots: dict
+    # 多意图识别：命中的全部意图（含主意图）与多意图标记，供路由与人工交接摘要使用。
+    intents: list[str]
+    is_multi_intent: bool
     contexts: list[dict]
     # 引用列表每轮由 validate_answer / execute_order_tool 赋值覆盖，不跨轮累加。
     citations: list[int]
