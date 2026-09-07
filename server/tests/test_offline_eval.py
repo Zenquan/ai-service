@@ -8,6 +8,9 @@
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from server.core.offline_eval import (
     check_thresholds,
     compute_retrieval_metrics,
@@ -15,6 +18,13 @@ from server.core.offline_eval import (
     evaluate_retrieval,
     DEFAULT_CASES,
 )
+
+# 全量标注集路径（相对测试文件定位，避免依赖 CWD）
+_CORPUS_PATH = Path(__file__).resolve().parent.parent / "data" / "cs_eval_cases.json"
+
+
+def _load_corpus() -> list[dict]:
+    return json.loads(_CORPUS_PATH.read_text(encoding="utf-8"))
 
 
 def test_builtin_cases_all_green():
@@ -174,3 +184,60 @@ def test_evaluate_customer_service_with_retrieval():
     assert result["retrieval"]["mrr"] == 1.0
     # 任务指标不受检索联动影响
     assert result["intent_accuracy"] == 1.0
+
+
+def test_full_corpus_passes_gate():
+    """磁盘上的全量标注集（含边界/长尾语料）跑出五项门禁指标 ≥ 0.9。
+
+    这是对 CI `cs-eval --fail-under 0.9` 的回归兜底：任何新增语料若把意图/工具/
+    转人工/越权/槽位拉低到阈值以下，本测试立即失败。
+    """
+    corpus = _load_corpus()
+    result = evaluate_customer_service(cases=corpus)
+    assert result["total"] == len(corpus)
+    for metric in (
+        "intent_accuracy", "tool_accuracy", "forbidden_blocked_rate",
+        "handoff_accuracy", "slot_completion_rate",
+    ):
+        assert result[metric] >= 0.9, f"{metric}={result[metric]} < 0.9"
+
+
+def test_full_corpus_intent_values_valid():
+    corpus = _load_corpus()
+    result = evaluate_customer_service(cases=corpus)
+    valid = {"greeting", "knowledge_question", "order_query", "after_sale", "complaint", "unknown"}
+    for c in result["cases"]:
+        assert c["actual_intent"] in valid, f"非法意图 {c['actual_intent']}"
+
+
+def test_full_corpus_retrieval_linkage():
+    """检索联动：对全量标注集里带检索标注的样例跑 Recall@K / MRR。
+
+    用确定性 mock retriever（按问题返回其标注的首个相关文档），验证：
+    - 联动只统计带 ``relevant_docs`` / ``relevant_keywords`` / ``relevant`` 的样例；
+    - Recall@1 / MRR 在 mock 命中首位时 = 1.0；
+    - 任务级指标不受检索联动影响。
+    """
+    corpus = _load_corpus()
+    labeled = [
+        c for c in corpus
+        if c.get("relevant_docs") or c.get("relevant_keywords") or c.get("relevant")
+    ]
+    assert labeled, "全量标注集应至少含一条检索标注样例"
+
+    doc_by_question = {
+        c["question"]: (c.get("relevant_docs") or ["kb.md"])[0] for c in labeled
+    }
+
+    def retriever(query, top_k=5):
+        doc = doc_by_question.get(query, "other.md")
+        return [{"text": f"{doc} 内容片段", "doc": doc, "seq": 0}]
+
+    result = evaluate_customer_service(cases=corpus, retriever=retriever)
+    r = result["retrieval"]
+    assert r["total"] == len(labeled)
+    assert r["recall_at_k"]["1"] == 1.0
+    assert r["mrr"] == 1.0
+    # 任务指标不受检索联动影响
+    assert result["intent_accuracy"] == 1.0
+    assert result["tool_accuracy"] == 1.0

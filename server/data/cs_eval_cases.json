@@ -265,5 +265,139 @@
     "must_handoff": false,
     "user_id": "demo-user",
     "_note": "多意图混合：'订单'关键词先命中归 order_query，售后诉求未识别。已知局限。"
+  },
+
+  {
+    "question": "What is the JFT-300M dataset?",
+    "intent": "knowledge_question",
+    "expected_tools": [],
+    "must_handoff": false,
+    "relevant_docs": ["DeepFace-ICCV2017.pdf"],
+    "relevant_keywords": ["JFT-300M", "300M"]
+  },
+  {
+    "question": "What is residual learning in ResNet?",
+    "intent": "knowledge_question",
+    "expected_tools": [],
+    "must_handoff": false,
+    "relevant_docs": ["ResNet-CVPR2016.pdf"],
+    "relevant_keywords": ["residual", "ResNet"]
+  },
+  {
+    "question": "RAG 的完整流程分几步？",
+    "intent": "knowledge_question",
+    "expected_tools": [],
+    "must_handoff": false,
+    "relevant_docs": ["02-RAG原理.md"],
+    "relevant_keywords": ["分块", "向量化"]
+  },
+  {
+    "question": "常见的向量数据库有哪些？",
+    "intent": "knowledge_question",
+    "expected_tools": [],
+    "must_handoff": false,
+    "relevant_docs": ["02-RAG原理.md"],
+    "relevant_keywords": ["向量数据库", "Qdrant"]
+  },
+  {
+    "question": "AI Agent 的规划能力怎么理解？",
+    "intent": "knowledge_question",
+    "expected_tools": [],
+    "must_handoff": false,
+    "relevant_docs": ["01-AI-Agent入门.md"],
+    "relevant_keywords": ["规划", "子任务"]
+  },
+
+  {
+    "question": "查订单b00001的物流",
+    "intent": "order_query",
+    "expected_tools": ["query_order_status"],
+    "required_slots": ["order_no"],
+    "must_handoff": false,
+    "user_id": "alice"
+  },
+  {
+    "question": "帮我查订单（A00001）的物流",
+    "intent": "order_query",
+    "expected_tools": ["query_order_status"],
+    "required_slots": ["order_no"],
+    "must_handoff": false,
+    "user_id": "demo-user"
+  },
+  {
+    "question": "A00001 和 B00001 两个订单分别到哪了",
+    "intent": "order_query",
+    "expected_tools": ["query_order_status"],
+    "required_slots": ["order_no"],
+    "must_handoff": false,
+    "user_id": "demo-user"
+  },
+  {
+    "question": "订单 A00001",
+    "intent": "order_query",
+    "expected_tools": ["query_order_status"],
+    "required_slots": ["order_no"],
+    "must_handoff": false,
+    "user_id": "demo-user"
+  },
+
+  {
+    "question": "你们这物流也太慢了吧，能不能退款",
+    "intent": "order_query",
+    "expected_tools": [],
+    "must_handoff": false,
+    "_note": "长尾多意图：'物流'关键词先于'退款'命中归 order_query；缺单号走澄清，售后诉求未识别。已知局限。"
+  },
+  {
+    "question": "请问人工客服怎么联系",
+    "intent": "complaint",
+    "expected_tools": [],
+    "must_handoff": true
+  },
+  {
+    "question": "商品有质量问题，我要退货退款",
+    "intent": "after_sale",
+    "expected_tools": [],
+    "must_handoff": true
+  },
+
+  {
+    "question": "123",
+    "intent": "unknown",
+    "expected_tools": [],
+    "forbidden_actions": ["query_order_status"],
+    "must_handoff": false
+  },
+  {
+    "question": "？？？",
+    "intent": "unknown",
+    "expected_tools": [],
+    "forbidden_actions": ["query_order_status"],
+    "must_handoff": false
+  },
+  {
+    "question": "ab",
+    "intent": "unknown",
+    "expected_tools": [],
+    "forbidden_actions": ["query_order_status"],
+    "must_handoff": false
+  },
+
+  {
+    "question": "哈喽",
+    "intent": "greeting",
+    "must_handoff": false
+  },
+  {
+    "question": "你们支持哪些支付方式？",
+    "intent": "knowledge_question",
+    "expected_tools": [],
+    "must_handoff": false
+  },
+  {
+    "question": "这个产品保修多久？",
+    "intent": "knowledge_question",
+    "expected_tools": [],
+    "must_handoff": false
   }
 ]
