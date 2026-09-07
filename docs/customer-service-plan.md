@@ -39,8 +39,10 @@
 - 前端双端页面：运营客服工作台（会话队列 / 对话主区 / 实时上下文 / 人工接管分栏）+ 客户聊天窗（快捷提问引导 / 流式回答 / 人工回复可见）。
 - LangGraph checkpoint 生产持久化：MySQL 后端 checkpointer（`checkpoint_saver.py`），按 `thread_id=conversation_id` 存图状态，重启恢复澄清/转人工中间态。
 - 客服任务评测体系 + PII 脱敏：离线评测（`cs-eval` 任务门禁 + Recall@K/MRR 检索联动）+ 在线埋点（evaluation_events）/ Prometheus（`/metrics`）+ 告警 + 三层脱敏；LLM 意图分类器可插拔替换（默认关闭）。
+- 限流、熔断与审计日志（MySQL 实现）：`rate_limit.py` 固定窗口原子计数 + `RateLimitMiddleware` 429；`circuit_breaker.py` closed/open/half-open 状态机包裹订单工具；`audit_log.py` 全链路审计落库（trace_id 关联 + PII 脱敏）。三者均无 MySQL 时回退内存，不依赖 Redis。
+- 安全评测（红队）：`cs-redteam` 门禁对三类攻击语料（`cs_redteam_cases.json`，提示注入/越权/对抗样本）跑图断言「攻击被阻断」——注入命中归 complaint 并打 `security_flag`（`_INJECTION_PATTERNS` + `_detect_injection`），对抗样本先归一化再匹配关键词（`_normalize_query` 去空白/混淆符号），越权靠订单归属校验兜底；聚合 `redteam_block_rate`（安全阻断率）作 CI 门禁。分类器注入检测的命中率经 `classify_query` 验证为全量阻断。
 
-FastAPI 会话服务优先加载 LangGraph Agent；缺依赖或运行失败时自动回退 RAG 直答。真实业务只读接口替换演示订单源、生产级 JWT/OAuth 与多租户、限流熔断与审计留在后续迭代。
+FastAPI 会话服务优先加载 LangGraph Agent；缺依赖或运行失败时自动回退 RAG 直答。真实业务只读接口替换演示订单源、生产级 JWT/OAuth 与多租户留在后续迭代（限流/熔断/审计已用 MySQL 落地，不依赖 Redis）。
 
 ### 已具备
 
@@ -48,14 +50,14 @@ FastAPI 会话服务优先加载 LangGraph Agent；缺依赖或运行失败时�
 - 文档解析、结构感知切块、Qdrant 存储。
 - 向量 + BM25 + RRF 混合检索，可选 rerank、引用校验和 Recall@K/MRR 离线评测。
 - LangGraph 图（rag 图 + 客服图）已并入 `server` 包，具备 retrieve、rerank、generate、validate、clarify、handoff 节点。
-- 客服任务评测：一次解决率、转人工率、工具调用成功率、无依据承诺率等指标尚未体系化。
+- 客服任务评测：一次解决率、转人工率、工具调用成功率、无依据承诺率等指标已体系化（离线评测 + 在线埋点 + Prometheus + 告警）。
 
 ### 需要补齐
 
 - 真实业务只读接口替换演示订单源；写操作（退款/改址/取消）尚未开放。
 - JWT/OAuth 生产化：真实验证码、密码重置、令牌刷新、多租户隔离。
-- 意图识别默认仍是确定性规则（LLM 分类器已实现但默认关闭，需 `LLM_CLASSIFIER=1` 启用；规则分类器已支持多意图风险优先级仲裁）。
-- 限流、熔断与审计日志：PII 脱敏已落地，尚缺 Redis 限流、工具调用熔断、审计日志全链路落库。
+- 意图识别默认仍是确定性规则（LLM 分类器已实现但默认关闭，需 `LLM_CLASSIFIER=1` 启用；规则分类器已支持多意图风险优先级仲裁 + 提示注入检测）。
+- 红队语料待随攻击手法演进持续扩充（当前 13 条覆盖注入/越权/对抗三类基线，拆字谐音等变体可加）。
 
 ## 3. MVP 范围
 
@@ -121,9 +123,9 @@ LangGraph 客服流程图
       │
       ├── RAG Core：rag/
       ├── Business Tools：订单、物流、售后
-      ├── MySQL：会话、消息、审计
+      ├── MySQL：会话、消息、审计、限流计数、熔断状态
       ├── Qdrant：知识库向量和结构元数据
-      └── Redis：限流、短期状态和任务队列（后续引入）
+      └── Redis：短期状态和任务队列（后续引入；限流不依赖 Redis）
 ```
 
 ### 架构决策
@@ -134,7 +136,7 @@ LangGraph 客服流程图
 | LLM 抽象 | `langchain-core` 按需使用 | 获得标准消息/Tool/Prompt 接口，避免绑定完整生态 |
 | RAG | 保留自研 `rag/` | 已有结构化切块、混合召回和评测，便于质量控制 |
 | API | FastAPI REST + SSE | REST 适合管理资源，SSE 适合回复流和节点事件 |
-| 主数据库 | MySQL | 会话、消息、用户、工具审计需要事务和查询能力；与现有 `chat_store` 持久化层一致 |
+| 主数据库 | MySQL | 会话、消息、用户、工具审计、限流计数、熔断状态需要事务和查询能力；与现有 `chat_store` 持久化层一致（限流/熔断/审计统一 MySQL，不引入 Redis 依赖） |
 | 向量库 | Qdrant | 延续现有实现；生产环境切远端服务 |
 | 认证 | MVP 使用 `conversation_id`，上线前接 JWT/OAuth | 先完成流程验证，再接入真实用户体系；业务工具必须在正式认证后开放 |
 | 组织方式 | 按客服 feature 组织新增代码 | 避免把意图、工具、会话逻辑继续堆进单一 `rag.py` |
@@ -466,8 +468,9 @@ Qdrant payload 继续保存 `chapter/title/section/heading_path`；客服回答�
 - [x] LLM 意图分类器：`LLMIntentClassifier` 同契约替换规则分类器，低置信度（<0.7）生成自适应追问，失败/无 key 回退规则分类器（`LLM_CLASSIFIER=1` 启用，默认关闭）。
 - [x] 客服任务评测体系：离线评测（`cs-eval` 任务级门禁 + Recall@K/MRR 检索联动）+ 在线埋点（evaluation_events）+ Prometheus 指标暴露（/metrics）+ Grafana 面板 + 告警（阈值判定/webhook/运营端面板）。
 - [x] 安全加固（PII 脱敏）：Prompt、指标埋点、API 响应三层脱敏（pure regex + recursive）。
-- [ ] JWT/OAuth 生产化（真实验证码/密码重置/令牌刷新/多租户隔离）、MySQL 表结构扩展、Redis。
-- [ ] 限流、熔断和安全评测。
+- [x] 限流、熔断与审计日志（MySQL 实现）：`rate_limit.py` 固定窗口原子计数 + `RateLimitMiddleware` 429；`circuit_breaker.py` closed/open/half-open 状态机包裹订单工具；`audit_log.py` 全链路审计落库（trace_id 关联 + PII 脱敏）。
+- [x] 安全评测（红队）：`cs-redteam` 门禁 + `cs_redteam_cases.json` 三类攻击语料（提示注入/越权/对抗样本），断言攻击被阻断/不泄露；分类器注入检测 + 对抗样本归一化（`security_flag` 标注，供审计与交接）。
+- [ ] JWT/OAuth 生产化（真实验证码/密码重置/令牌刷新/多租户隔离）、MySQL 表结构扩展、Redis 任务队列。
 
 ### Phase 3：业务闭环
 
@@ -503,18 +506,20 @@ Qdrant payload 继续保存 `chapter/title/section/heading_path`；客服回答�
 - 客服任务离线评测集：`offline_eval.py`（`evaluate_customer_service` + `check_thresholds` + `cs-eval` CLI），mock 工具跑图验证意图/工具/转人工/越权/槽位五项任务级正确性；默认标注集 `data/cs_eval_cases.json`（57 条真实语料含边界/长尾，10 条带检索标注），`--fail-under` 阈值门禁 + `--json` 报告，已纳入 CI；支持 `--with-retrieval` 与 Recall@K/MRR 检索评测联动（共用同一份标注集，实测 Recall@1/3/5=1.0、MRR=1.0）。
 - 安全加固（PII 脱敏）：`redactor.py` 纯正则脱敏器（手机号/身份证/邮箱/银行卡/订单号）+ Prompt/指标/API 响应三层接入（`REDACTOR_ENABLED` 开关）。
 - 多意图混合识别：`classifier.py` 新增 `detect_intents` 收集全部命中意图，按风险优先级仲裁主意图（投诉 > 售后 > 订单 > 寒暄），`intents`/`is_multi_intent` 写入 state；LLM 分类器 `_SYSTEM`/`_sanitize` 同步兼容多意图输出；标注集 4 条混合样例修正为售后转人工（`test_multi_intent.py` 9 例回归）。
+- 限流、熔断与审计日志（MySQL 实现，无 Redis 依赖）：`rate_limit.py`（固定窗口原子自增，`rate_limit_counters` 表）+ `RateLimitMiddleware`（按客户端 IP 对客服消息写接口限流，超限 429 + `rate_limited` 审计）；`circuit_breaker.py`（closed/open/half-open 状态机，`circuit_breaker_state` 表，包裹 `query_order_status`，timeout/error 计失败、not_found/forbidden 不计）；`audit_log.py`（`audit_logs` 表，全链路 message_received/tool_call/assistant_replied/rate_limited/manual_reply/error 事件，trace_id 关联 + PII 脱敏）。三者均无 MySQL 时回退内存（`test_rate_limit.py`/`test_circuit_breaker.py`/`test_audit_log.py` 21 例）。
+- 安全评测（红队）：`offline_eval.py` 新增 `evaluate_redteam`（复用 mock 工具跑图，逐题断言意图/转人工/禁止工具/敏感串泄露），CLI `cs-redteam --fail-under` 门禁；攻击语料 `data/cs_redteam_cases.json`（13 条：提示注入 6 / 越权 2 / 对抗样本 5）；分类器配套加固——`_normalize_query`（去空白/混淆符号防拆字绕过）+ `_INJECTION_PATTERNS`/`_detect_injection`（注入命中归 complaint 并打 `security_flag="prompt_injection"`，state 新增 `security_flag` 字段供审计/交接）。实测 13/13 攻击全部被阻断（`redteam_block_rate=1.0`）（`test_redteam.py` 10 例）。
 
 ### 下一步迭代
 
-> 当前轮（多意图识别）已完成：规则分类器风险优先级仲裁 + LLM 分类器契约兼容 + 4 条混合样例修正，门禁/单测全绿。以下按优先级排列后续方向。
-
-**P0 — 安全与正确性补齐**
-1. **限流、熔断与审计日志**：PII 脱敏已落地，补充 Redis 限流、工具调用熔断、审计日志全链路落库（`tool_calls` 已有 audit_id，需接全链路）。
+> 当前轮（安全评测红队）已完成：分类器注入检测 + 对抗样本归一化 + `evaluate_redteam`/`cs-redteam` 门禁 + 13 条攻击语料，实测攻击全部被阻断（阻断率 1.0）。P0「安全与正确性补齐」至此全部收口（多意图识别、限流/熔断/审计、红队评测均已落地）。以下按优先级排列后续方向。
 
 **P1 — 业务真实化**
-2. **真实业务只读接口**：替换演示订单源（`orders.py` 现为硬编码样例），接入真实订单/物流系统。
-3. **JWT/OAuth 生产化**：真实验证码、密码重置、令牌刷新、多租户隔离；MySQL 表结构扩展。
+1. **真实业务只读接口**：替换演示订单源（`orders.py` 现为硬编码样例），接入真实订单/物流系统。
+2. **JWT/OAuth 生产化**：真实验证码、密码重置、令牌刷新、多租户隔离；MySQL 表结构扩展。
 
 **P2 — 业务闭环（Phase 3）**
-4. **受控写操作**：退款/改址/取消订单走「展示影响 → 确认 → 执行」三步。
-5. **售后流程编排 + 工单系统对接**、坐席工作台增强、会话质量分析。
+3. **受控写操作**：退款/改址/取消订单走「展示影响 → 确认 → 执行」三步。
+4. **售后流程编排 + 工单系统对接**、坐席工作台增强、会话质量分析。
+
+**持续**
+5. **红队语料与防线演进**：补充谐音/编码/多轮注入等对抗变体；把注入检测并入 LLM 分类器（规则先兜底，LLM 判复杂变体）；红队门禁纳入 CI。安全评测是持续对抗而非一次性交付。
