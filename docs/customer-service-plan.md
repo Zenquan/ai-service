@@ -54,8 +54,7 @@ FastAPI 会话服务优先加载 LangGraph Agent；缺依赖或运行失败时�
 
 - 真实业务只读接口替换演示订单源；写操作（退款/改址/取消）尚未开放。
 - JWT/OAuth 生产化：真实验证码、密码重置、令牌刷新、多租户隔离。
-- 意图识别默认仍是确定性规则（LLM 分类器已实现但默认关闭，需 `LLM_CLASSIFIER=1` 启用）。
-- 多意图混合识别：规则分类器按顺序匹配，「查订单+退款」会被「订单」关键词先命中，需提升售后优先级或引入 LLM 分类器处理混合诉求。
+- 意图识别默认仍是确定性规则（LLM 分类器已实现但默认关闭，需 `LLM_CLASSIFIER=1` 启用；规则分类器已支持多意图风险优先级仲裁）。
 - 限流、熔断与审计日志：PII 脱敏已落地，尚缺 Redis 限流、工具调用熔断、审计日志全链路落库。
 
 ## 3. MVP 范围
@@ -503,19 +502,19 @@ Qdrant payload 继续保存 `chapter/title/section/heading_path`；客服回答�
 - 客服任务评测体系：`metrics.py` 指标埋点（`evaluation_events` 表，MySQL + 内存回退）、`prom_exporter.py` Prometheus 指标暴露（`/metrics`，官方 `prometheus_client` 库）、`alerts.py` 告警（转人工率/出错率/无依据承诺率阈值判定 + webhook + `evaluation_alerts` 表）、Grafana 面板（`deploy/grafana/dashboard.json`）+ Prometheus 告警规则（`deploy/prometheus/alerts.yml`）、运营端告警面板。
 - 客服任务离线评测集：`offline_eval.py`（`evaluate_customer_service` + `check_thresholds` + `cs-eval` CLI），mock 工具跑图验证意图/工具/转人工/越权/槽位五项任务级正确性；默认标注集 `data/cs_eval_cases.json`（57 条真实语料含边界/长尾，10 条带检索标注），`--fail-under` 阈值门禁 + `--json` 报告，已纳入 CI；支持 `--with-retrieval` 与 Recall@K/MRR 检索评测联动（共用同一份标注集，实测 Recall@1/3/5=1.0、MRR=1.0）。
 - 安全加固（PII 脱敏）：`redactor.py` 纯正则脱敏器（手机号/身份证/邮箱/银行卡/订单号）+ Prompt/指标/API 响应三层接入（`REDACTOR_ENABLED` 开关）。
+- 多意图混合识别：`classifier.py` 新增 `detect_intents` 收集全部命中意图，按风险优先级仲裁主意图（投诉 > 售后 > 订单 > 寒暄），`intents`/`is_multi_intent` 写入 state；LLM 分类器 `_SYSTEM`/`_sanitize` 同步兼容多意图输出；标注集 4 条混合样例修正为售后转人工（`test_multi_intent.py` 9 例回归）。
 
 ### 下一步迭代
 
-> 当前轮（边界/长尾语料 + Recall@K/MRR 检索评测联动）已完成：标注集 39→57 条、全量门禁回归、检索联动实测（Recall@1/3/5=1.0、MRR=1.0）。以下按优先级排列后续方向。
+> 当前轮（多意图识别）已完成：规则分类器风险优先级仲裁 + LLM 分类器契约兼容 + 4 条混合样例修正，门禁/单测全绿。以下按优先级排列后续方向。
 
 **P0 — 安全与正确性补齐**
 1. **限流、熔断与审计日志**：PII 脱敏已落地，补充 Redis 限流、工具调用熔断、审计日志全链路落库（`tool_calls` 已有 audit_id，需接全链路）。
-2. **多意图混合识别**：规则分类器顺序匹配会误判「查订单+退款」；优先提升售后关键词优先级，或对混合诉求走 LLM 分类器。
 
 **P1 — 业务真实化**
-3. **真实业务只读接口**：替换演示订单源（`orders.py` 现为硬编码样例），接入真实订单/物流系统。
-4. **JWT/OAuth 生产化**：真实验证码、密码重置、令牌刷新、多租户隔离；MySQL 表结构扩展。
+2. **真实业务只读接口**：替换演示订单源（`orders.py` 现为硬编码样例），接入真实订单/物流系统。
+3. **JWT/OAuth 生产化**：真实验证码、密码重置、令牌刷新、多租户隔离；MySQL 表结构扩展。
 
 **P2 — 业务闭环（Phase 3）**
-5. **受控写操作**：退款/改址/取消订单走「展示影响 → 确认 → 执行」三步。
-6. **售后流程编排 + 工单系统对接**、坐席工作台增强、会话质量分析。
+4. **受控写操作**：退款/改址/取消订单走「展示影响 → 确认 → 执行」三步。
+5. **售后流程编排 + 工单系统对接**、坐席工作台增强、会话质量分析。
