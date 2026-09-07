@@ -185,6 +185,7 @@ ai-service/
 - **告警**：转人工率 / 出错率 / 无依据承诺率 三项滑动窗口阈值判定，命中落 `evaluation_alerts` 表 + 可选 webhook 推送（`ALERT_WEBHOOK_URL`）；运营端「告警」入口查看近期告警。
 - **监控配置**：`deploy/grafana/dashboard.json`（面板）+ `deploy/prometheus/alerts.yml` + `prometheus.yml`（抓取 + 告警规则），导入 Grafana 即可。
 - **阈值可配**：`ALERT_HANDOFF_RATE` / `ALERT_ERROR_RATE` / `ALERT_UNFOUNDED_RATE` / `ALERT_MIN_SAMPLES`（详见 `.env.local.example`）。
+- **离线评测集**：`python -m server.cli cs-eval` 用 mock 工具跑客服图，回归验证意图识别/工具调用/转人工判断/越权拦截/槽位收集五项任务级正确性；标注集字段 `intent`/`expected_tools`/`required_slots`/`must_handoff`/`forbidden_actions`，`--cases` 指定 JSON。
 
 ## 🔍 日志与链路排查（trace_id）
 
@@ -208,6 +209,7 @@ cd server
 .venv/bin/python -m server.cli ingest data/docs      # 入库
 .venv/bin/python -m server.cli ask "什么是 AI Agent？"
 .venv/bin/python -m server.cli eval                   # 离线 Recall@K / MRR
+.venv/bin/python -m server.cli cs-eval                # 客服任务离线评测（意图/工具/转人工/越权/槽位）
 .venv/bin/python -m server.cli doc-list               # 列出库内文档
 
 # 前端
