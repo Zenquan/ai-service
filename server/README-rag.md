@@ -77,7 +77,7 @@ full = run("data/docs", "你的问题")  # → {"ingest": stats, "ask": ans}
 - **健壮性**（P1）：LLM 调用 60s 超时 + 2 次重试；rerank 失败静默回退融合结果
 - **检索可替换**：retrieve 独立成层，关键词/向量/混合/rerank 都是换实现不换管线
 
-## 踩坑实录（面试素材，都是真踩过的）
+## 踩坑实录
 
 ### 1. Python 3.13/3.14 装不了 fastembed（onnxruntime 无 wheel）
 - **现象**：`pip install fastembed` 报依赖冲突（`onnxruntime` / `mmh3` 在新版本无预编译 wheel）

@@ -149,12 +149,12 @@ ai-service/
 | [server/README.md](server/README.md) | 后端开发 | server 包结构、开发/测试/部署说明 |
 | [server/README-rag.md](server/README-rag.md) | RAG 原理 | 核心链路、踩坑实录、优化记录 P0/P1 |
 | [server/README-graph.md](server/README-graph.md) | 图编排 | LangGraph 图约定与关键踩坑 |
-| [docs/architecture.md](docs/architecture.md) | 面试/接手 | 分层架构、端到端时序、关键设计决策及取舍 |
+| [docs/architecture.md](docs/architecture.md) | 接手 | 分层架构、端到端时序、关键设计决策及取舍 |
 | [docs/api.md](docs/api.md) | 联调/二次开发 | API 端点完整参考：请求/响应/错误/curl 实测 |
 | [docs/customer-service-plan.md](docs/customer-service-plan.md) | 规划 | 智能客服系统 Phase 路线、版本里程碑（v0.1–v0.4）、验收标准与剩余迭代 |
 | [web/README.md](web/README.md) | 前端开发 | 前端技术栈、目录语义、chat-provider 原理、构建注意 |
 
-## 🧠 面试亮点（一句话版）
+## 🧠 亮点
 
 1. **单一后端包 + src 布局**：rag/langgraph/api 三层合并为 `server` 包，正规 `from server.core.retrieve import retrieve` 导入（无 sys.path hack、无模块名碰撞），依赖单一来源 `server/pyproject.toml`
 2. **编排与检索解耦**：LangGraph 图全部依赖注入（retriever/generator/classifier 参数化），契约测试不碰向量库与模型

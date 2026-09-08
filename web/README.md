@@ -88,7 +88,7 @@ overrides:
 
 生效后 `pnpm install` 会统一到 10.7.0（含 sql_more），build 通过。**如果改了 overrides 后 pnpm 报 frozen lockfile 不一致，用 `pnpm install --no-frozen-lockfile` 重生成 lockfile。**
 
-## 前端设计要点（面试可讲）
+## 前端设计要点
 
 1. **非流式对接模式**：不强行套 OpenAI 流式格式，`DefaultChatProvider` 透传 + `transformMessage` 组装——换流式时同一套 Provider 机制
 2. **防幻觉闭环可见性**：引用徽标（校验通过/含越界）+ 素材卡片展开原文，用户能自查回答依据
