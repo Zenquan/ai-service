@@ -59,8 +59,38 @@ class EvaluationRecorder(ABC):
     @abstractmethod
     def record_event(self, payload: dict[str, Any]) -> None: ...
 
+    @abstractmethod
+    def summary(self) -> dict[str, Any]:
+        """聚合出评测指标的 JSON 摘要，供运营端「性能」看板消费。
+
+        返回结构（Memory / MySQL 同构）：
+        - ``storage``：来源（memory / mysql）
+        - ``total`` / ``resolved`` / ``handoff`` / ``clarification`` / ``errors``：总量与分类计数
+        - ``tool_success`` / ``tool_failure``：工具调用成功 / 失败计数（``tool_status`` 为 ok 记成功，
+          error / timeout 等记失败，none 不计入）
+        - ``citation_valid`` / ``citation_invalid``：引用校验有效 / 无效计数
+        - ``latency_avg_ms`` / ``latency_p50_ms`` / ``latency_p95_ms``：响应时延统计（ms）
+        - ``by_intent`` / ``by_response_mode`` / ``by_tool_status``：维度分布
+        """
+
     def clear(self) -> None:  # 内存实现需要；MySQL 保持 no-op
         return None
+
+
+def _percentile(values: list[float], p: float) -> float | None:
+    """线性插值分位数（p ∈ [0, 1]）。空序列返回 None，单元素直接返回。"""
+    if not values:
+        return None
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return round(ordered[0], 1)
+    rank = (len(ordered) - 1) * p
+    lower = int(rank)
+    upper = lower + 1
+    if upper >= len(ordered):
+        return round(ordered[-1], 1)
+    weight = rank - lower
+    return round(ordered[lower] * (1 - weight) + ordered[upper] * weight, 1)
 
 
 class MemoryEvaluationRecorder(EvaluationRecorder):
@@ -95,6 +125,10 @@ class MemoryEvaluationRecorder(EvaluationRecorder):
                 value = str(e.get(key) or "unknown")
                 result[bucket][value] = result[bucket].get(value, 0) + 1
         return result
+
+    def summary(self) -> dict[str, Any]:
+        """从内存事件列表聚合摘要（与 MySQL 实现同构，见基类 docstring）。"""
+        return _summarize_events(self.events, storage="memory")
 
 
 class MysqlEvaluationRecorder(EvaluationRecorder):
@@ -177,12 +211,147 @@ class MysqlEvaluationRecorder(EvaluationRecorder):
                 cur.execute(self._INSERT, values)
             conn.commit()
 
+    _SUMMARY_AGG = (
+        "SELECT "
+        "COUNT(*), "
+        "SUM(needs_human), "
+        "SUM(needs_clarification), "
+        "SUM(CASE WHEN error IS NOT NULL AND error <> '' THEN 1 ELSE 0 END), "
+        "SUM(CASE WHEN tool_status = 'ok' THEN 1 ELSE 0 END), "
+        "SUM(CASE WHEN tool_status IN ('error', 'timeout') THEN 1 ELSE 0 END), "
+        "SUM(CASE WHEN citation_valid = 1 THEN 1 ELSE 0 END), "
+        "SUM(CASE WHEN citation_valid = 0 THEN 1 ELSE 0 END), "
+        "AVG(latency_ms) "
+        "FROM evaluation_events"
+    )
+    _SUMMARY_GROUP_BY = "SELECT {col}, COUNT(*) FROM evaluation_events GROUP BY {col}"
+
+    def summary(self) -> dict[str, Any]:
+        """用 SQL 聚合出摘要（分位数在 Python 侧计算，与内存实现同构）。"""
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(self._SUMMARY_AGG)
+                row = cur.fetchone()
+            if row is None or row[0] == 0:
+                return _summarize_events([], storage="mysql")
+            total, handoff, clarification, errors, tool_ok, tool_fail, cit_ok, cit_bad, avg_ms = row
+            handoff = handoff or 0
+            clarification = clarification or 0
+            errors = errors or 0
+            tool_ok = tool_ok or 0
+            tool_fail = tool_fail or 0
+            cit_ok = cit_ok or 0
+            cit_bad = cit_bad or 0
+            avg_ms = round(float(avg_ms), 1) if avg_ms is not None else None
+
+            groups: dict[str, dict[str, int]] = {}
+            for col in ("intent", "response_mode", "tool_status"):
+                with conn.cursor() as cur:
+                    cur.execute(self._SUMMARY_GROUP_BY.format(col=col))
+                    groups[col] = {str(k) or "unknown": int(v) for k, v in cur.fetchall()}
+
+            with conn.cursor() as cur:
+                cur.execute("SELECT latency_ms FROM evaluation_events WHERE latency_ms IS NOT NULL ORDER BY latency_ms")
+                latencies = [float(r[0]) for r in cur.fetchall()]
+
+        return {
+            "storage": "mysql",
+            "total": int(total),
+            "resolved": int(total) - int(handoff) - int(clarification) - int(errors),
+            "handoff": int(handoff),
+            "clarification": int(clarification),
+            "errors": int(errors),
+            "tool_success": int(tool_ok),
+            "tool_failure": int(tool_fail),
+            "citation_valid": int(cit_ok),
+            "citation_invalid": int(cit_bad),
+            "latency_avg_ms": avg_ms,
+            "latency_p50_ms": _percentile(latencies, 0.5),
+            "latency_p95_ms": _percentile(latencies, 0.95),
+            "by_intent": groups["intent"],
+            "by_response_mode": groups["response_mode"],
+            "by_tool_status": groups["tool_status"],
+        }
+
 
 def _truncate(value: Any, limit: int) -> str | None:
     if value is None:
         return None
     text = str(value)
     return text[:limit]
+
+
+def _summarize_events(events: list[dict[str, Any]], storage: str) -> dict[str, Any]:
+    """从事件列表聚合出性能摘要（Memory 与 MySQL 拉取后的统一出口）。
+
+    ``tool_status`` 语义：``ok`` 记成功，``error`` / ``timeout`` 记失败，
+    ``none`` / 空 不参与成功率；``citation_valid`` 为 None 不参与有效/无效计数。
+    """
+    total = len(events)
+    resolved = handoff = clarification = errors = 0
+    tool_success = tool_failure = 0
+    citation_valid = citation_invalid = 0
+    latencies: list[float] = []
+    by_intent: dict[str, int] = {}
+    by_response_mode: dict[str, int] = {}
+    by_tool_status: dict[str, int] = {}
+
+    for e in events:
+        if bool(e.get("needs_human")):
+            handoff += 1
+        if bool(e.get("needs_clarification")):
+            clarification += 1
+        if bool(e.get("error")):
+            errors += 1
+        if not (bool(e.get("needs_human")) or bool(e.get("needs_clarification")) or bool(e.get("error"))):
+            resolved += 1
+
+        status = e.get("tool_status")
+        if status == "ok":
+            tool_success += 1
+        elif status in ("error", "timeout"):
+            tool_failure += 1
+
+        cv = e.get("citation_valid")
+        if cv is True:
+            citation_valid += 1
+        elif cv is False:
+            citation_invalid += 1
+
+        ms = e.get("latency_ms")
+        if ms is not None:
+            try:
+                latencies.append(float(ms))
+            except (TypeError, ValueError):
+                pass
+
+        _inc(by_intent, str(e.get("intent") or "unknown"))
+        _inc(by_response_mode, str(e.get("response_mode") or "unknown"))
+        _inc(by_tool_status, str(status or "none"))
+
+    avg_ms = round(sum(latencies) / len(latencies), 1) if latencies else None
+    return {
+        "storage": storage,
+        "total": total,
+        "resolved": resolved,
+        "handoff": handoff,
+        "clarification": clarification,
+        "errors": errors,
+        "tool_success": tool_success,
+        "tool_failure": tool_failure,
+        "citation_valid": citation_valid,
+        "citation_invalid": citation_invalid,
+        "latency_avg_ms": avg_ms,
+        "latency_p50_ms": _percentile(latencies, 0.5),
+        "latency_p95_ms": _percentile(latencies, 0.95),
+        "by_intent": by_intent,
+        "by_response_mode": by_response_mode,
+        "by_tool_status": by_tool_status,
+    }
+
+
+def _inc(counter: dict[str, int], key: str) -> None:
+    counter[key] = counter.get(key, 0) + 1
 
 
 def build_default_recorder() -> EvaluationRecorder:
