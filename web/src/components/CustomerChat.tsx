@@ -1,9 +1,16 @@
 /** 客户聊天窗：登录后的普通用户入口。 */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Avatar, Button, Dropdown, Tag, Typography } from 'antd'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Avatar, Button, Dropdown, Popconfirm, Tag, Typography } from 'antd'
 import type { MenuProps } from 'antd'
-import { ArrowRightOutlined, CustomerServiceOutlined, LogoutOutlined, RobotOutlined, UserOutlined } from '@ant-design/icons'
+import {
+  ArrowRightOutlined,
+  CustomerServiceOutlined,
+  LogoutOutlined,
+  PlusOutlined,
+  RobotOutlined,
+  UserOutlined,
+} from '@ant-design/icons'
 import { Bubble, Sender } from '@ant-design/x'
 import type { BubbleListProps } from '@ant-design/x'
 import { useXChat } from '@ant-design/x-sdk'
@@ -49,7 +56,12 @@ export default function CustomerChat({
   onLogout: () => void
 }) {
   const [input, setInput] = useState('')
-  const conversationId = `customer-${user.id}`
+  // 会话 id 可变：默认 customer-{userId}，新建会话时追加时间戳。
+  // 存 localStorage —— 刷新页面后仍停在同一会话，而不是回到最初的固定会话。
+  const conversationStorageKey = `cs:conversation:${user.id}`
+  const [conversationId, setConversationId] = useState(
+    () => localStorage.getItem(`cs:conversation:${user.id}`) || `customer-${user.id}`,
+  )
   const provider = useMemo(() => createCustomerServiceProvider(conversationId), [conversationId])
   const { messages, setMessages, onRequest, isRequesting, abort } = useXChat({
     provider,
@@ -80,7 +92,18 @@ export default function CustomerChat({
     })))
   }, [conversationId, setMessages])
 
+  // 新建会话后本轮跳过历史拉取（新会话必然为空），避免与进行中的请求竞态
+  const skipHistoryLoad = useRef(false)
+
   useEffect(() => {
+    localStorage.setItem(conversationStorageKey, conversationId)
+  }, [conversationStorageKey, conversationId])
+
+  useEffect(() => {
+    if (skipHistoryLoad.current) {
+      skipHistoryLoad.current = false
+      return
+    }
     loadHistory().catch(() => { /* 新会话尚无历史 */ })
   }, [loadHistory])
 
@@ -114,6 +137,16 @@ export default function CustomerChat({
     setInput('')
     onRequest({ message: text.trim() })
   }
+
+  // 新建会话：换用新的会话 id（旧会话记录仍在服务端，运营端可见），
+  // 中断进行中的请求并清空当前视图。
+  const startNewConversation = useCallback(() => {
+    if (isRequesting) abort()
+    skipHistoryLoad.current = true
+    setInput('')
+    setMessages([])
+    setConversationId(`customer-${user.id}-${Date.now()}`)
+  }, [abort, isRequesting, setMessages, user.id])
 
   const items = messages.map(({ id, message, status }) => ({
     key: id,
@@ -154,6 +187,21 @@ export default function CustomerChat({
                 <Typography.Title level={4}>智能客服</Typography.Title>
                 <span className="chat-title-status"><i className="online-dot" />在线 · 自动接待</span>
               </div>
+            </div>
+            <div className="chat-toolbar-actions">
+              {messages.length > 0 ? (
+                <Popconfirm
+                  title="新建会话"
+                  description="当前会话记录仍保留在服务端，这里将开始一个新的对话。"
+                  okText="新建"
+                  cancelText="取消"
+                  onConfirm={startNewConversation}
+                >
+                  <Button icon={<PlusOutlined />}>新建会话</Button>
+                </Popconfirm>
+              ) : (
+                <Button icon={<PlusOutlined />} onClick={startNewConversation}>新建会话</Button>
+              )}
             </div>
           </div>
           <div className="chat-policy-bar">
