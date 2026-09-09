@@ -102,7 +102,11 @@ function AnswerView({ msg, status }: { msg: ChatMessage; status?: MessageStatus 
     layerText = '正在为您转人工'
     layerColor = 'gold'
   } else if (msg.responseMode === 'clarify' && msg.intent === 'order_query') {
-    layerText = '请补充订单号'
+    // 订单澄清有两种语义：缺单号 / 单号有误需核对，用后端给的简短原因区分，
+    // 避免「查无此单，请核对」被显示成「请补充订单号」。
+    layerText = msg.clarifyReason && msg.clarifyReason.length <= 24
+      ? msg.clarifyReason
+      : '请补充订单号'
     layerColor = 'orange'
   } else if (msg.responseMode === 'clarify') {
     layerText = '请补充信息'

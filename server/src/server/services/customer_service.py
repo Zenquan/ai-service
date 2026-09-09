@@ -43,11 +43,21 @@ DEFAULT_USER_ID = os.getenv("DEMO_USER_ID", "demo-user")
 
 _HANDOFF_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("投诉或高风险请求", ("投诉", "举报", "欺骗", "骗子", "赔偿", "人工客服")),
-    ("业务工具尚未接入", ("订单", "物流", "快递", "配送", "发货", "收货", "退款", "退货", "换货", "售后", "维修")),
+    # 注意：这里的语义是「图不可用时这些业务请求无法自助完成」，而非字面的
+    # 「工具未接入」——订单工具早已接入，文案需如实反映「服务暂时不可用」。
+    ("订单/售后服务暂时不可用", ("订单", "物流", "快递", "配送", "发货", "收货", "退款", "退货", "换货", "售后", "维修")),
 )
 
 # 传给 LangGraph 的图状态由原生 checkpointer（MysqlCheckpointSaver / InMemorySaver）
 # 以 thread_id=conversation_id 持久化，见 services/checkpoint_saver.py；不再手写快照。
+
+
+# 知识库检索不到可用内容时的澄清文案（降级路径复用）：引导用户换说法，
+# 把「是否转人工」的选择权留给用户，而不是系统直接转人工。
+_NO_ANSWER_CLARIFY_TEXT = (
+    "这个问题暂时没有在知识库中找到足够相关的资料。"
+    "您可以换个说法或补充具体名称再问一次；确认需要人工帮助，请直接说“转人工”。"
+)
 
 
 def _now() -> str:
@@ -543,15 +553,25 @@ class CustomerServiceService:
                 rag_result = rag.ask(message)
                 answer = rag_result.get("answer", "")
                 error = rag_result.get("error")
+                if error:
+                    # 服务级故障：转人工（用户无法自行纠正）。
+                    mode, needs_human, needs_clarify = "handoff", True, False
+                elif not answer:
+                    # 只是没检索到可用内容：先澄清，不替用户决定转人工。
+                    mode, needs_human, needs_clarify = "clarify", False, True
+                    answer = _NO_ANSWER_CLARIFY_TEXT
+                else:
+                    mode, needs_human, needs_clarify = "answer", False, False
                 result = {
                     "answer": answer,
                     "materials": rag_result.get("materials", []),
                     "citations": rag_result.get("citations", []),
                     "citation_valid": bool(rag_result.get("citation_valid", False)),
-                    "response_mode": "answer" if answer and not error else "handoff",
-                    "needs_human": bool(error),
-                    "needs_clarification": not answer and not error,
-                    "handoff_reason": "知识库服务暂时不可用" if error else "知识库未返回可用回答" if not answer else None,
+                    "response_mode": mode,
+                    "needs_human": needs_human,
+                    "needs_clarification": needs_clarify,
+                    "handoff_reason": "知识库服务暂时不可用" if error else None,
+                    "clarify_reason": None if error or answer != _NO_ANSWER_CLARIFY_TEXT else answer,
                     "error": error,
                 }
 

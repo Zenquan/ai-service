@@ -59,7 +59,8 @@ def test_business_request_handoffs_without_calling_rag(client, monkeypatch):
     body = response.json()
     assert body["response_mode"] == "handoff"
     assert body["needs_human"] is True
-    assert body["handoff_reason"] == "业务工具尚未接入"
+    # 语义是「图不可用时订单/售后无法自助完成」，不是字面的「工具未接入」（订单工具已接入）
+    assert body["handoff_reason"] == "订单/售后服务暂时不可用"
     assert client.get("/api/v1/conversations/c-2").json()["status"] == "handoff"
 
 def test_message_validation(client):
