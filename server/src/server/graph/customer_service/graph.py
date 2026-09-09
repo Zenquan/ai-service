@@ -7,6 +7,7 @@ from langgraph.graph import END, START, StateGraph
 
 from server.graph.customer_service.classifier import Classifier, classify_intent
 from server.graph.customer_service.nodes import (
+    MAX_REWRITES,
     Generator,
     Retriever,
     clarify,
@@ -85,7 +86,18 @@ def _after_order_tool(state: CustomerServiceState) -> str:
 
 
 def _after_validation(state: CustomerServiceState) -> str:
-    return "handoff" if state.get("needs_human") else "finalize"
+    """引用校验：不合规先回 compose_answer 重写，仍不合规/已达上限才转人工。
+
+    与 RAG 主图保持一致——幻觉引用属于「模型可自纠」的错误，一次就转人工会
+    把大量正常问答误判成人工工单。
+    """
+    if state.get("needs_human"):
+        return "handoff"
+    if not state.get("citation_valid", True):
+        if int(state.get("rewrites") or 0) < MAX_REWRITES:
+            return "compose_answer"
+        return "handoff"
+    return "finalize"
 
 
 def build_customer_service_graph(
@@ -168,7 +180,11 @@ def build_customer_service_graph(
     graph.add_conditional_edges(
         "validate_answer",
         _after_validation,
-        {"handoff": "handoff", "finalize": "finalize"},
+        {
+            "handoff": "handoff",
+            "compose_answer": "compose_answer",
+            "finalize": "finalize",
+        },
     )
     graph.add_edge("clarify", END)
     graph.add_edge("handoff", END)

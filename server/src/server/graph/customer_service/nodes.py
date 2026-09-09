@@ -7,6 +7,11 @@ from typing import Callable
 from server.tools.orders import ToolResult, extract_order_numbers
 from server.graph.customer_service.state import CustomerServiceState
 
+# 连续查不到订单时的澄清次数上限：达到后才转人工，避免「输错一次单号就被转人工」。
+MAX_ORDER_NOT_FOUND = 2
+# 幻觉引用的重写次数上限（与 RAG 主图一致）：引用不合规先重写，重写仍不合规才转人工。
+MAX_REWRITES = 2
+
 Retriever = Callable[[str, int], list[dict]]
 Generator = Callable[[str, list[dict], list], tuple[str, list[int]]]
 OrderTool = Callable[..., dict]
@@ -58,9 +63,17 @@ def compose_answer(state: CustomerServiceState, generator: Generator | None) -> 
         out["needs_human"] = True
         out["handoff_reason"] = "生成器未配置"
         return out
+    question = state.get("current_query", "")
+    contexts = state.get("contexts", [])
+    if state.get("rewrites"):
+        # 重写轮（上一轮引用校验不合规）：显式约束引用编号范围，纠正幻觉引用。
+        question = (
+            f"{question}\n（请严格依据上述资料作答，"
+            f"引用编号只能是 1 到 {len(contexts)} 之间的整数，不得引用资料之外的来源。）"
+        )
     answer, citations = generator(
-        state.get("current_query", ""),
-        state.get("contexts", []),
+        question,
+        contexts,
         state.get("messages", []),
     )
     out = dict(state)
@@ -134,6 +147,9 @@ def execute_order_tool(state: CustomerServiceState, order_tool: OrderTool | None
 
     out["tool_results"].append(result.to_dict())
     if result.status == "ok":
+        # 查询成功：清掉「查不到订单」的累计次数，恢复正常流程。
+        slots.pop("order_not_found_count", None)
+        out["slots"] = slots
         out.update({
             "needs_human": False,
             "needs_clarification": False,
@@ -146,9 +162,35 @@ def execute_order_tool(state: CustomerServiceState, order_tool: OrderTool | None
         return out
 
     if result.status == "not_found":
-        reason = "订单不存在或订单号有误"
-        override = result.message
-    elif result.status == "forbidden":
+        # 查无此单属「用户可自行纠正」的业务语义：先澄清核对订单号，不直接转人工；
+        # 连续 MAX_ORDER_NOT_FOUND 次仍查不到，才升级为人工（避免澄清死循环）。
+        misses = int(slots.get("order_not_found_count") or 0) + 1
+        slots["order_not_found_count"] = misses
+        slots.pop("order_no", None)  # 丢弃错误单号，下一轮重新提取
+        out["slots"] = slots
+        if misses >= MAX_ORDER_NOT_FOUND:
+            out.update({
+                "needs_human": True,
+                "needs_clarification": False,
+                "response_mode": "handoff",
+                "handoff_reason": "多次核对仍未查询到订单",
+                "handoff_answer_override": f"{result.message}我已为您转人工处理，请稍候。",
+                "error": None,
+            })
+        else:
+            out.update({
+                "needs_human": False,
+                "needs_clarification": True,
+                "response_mode": "clarify",
+                "clarify_reason": "订单号不存在或输入有误",
+                "clarify_answer": (
+                    f"{result.message}请核对后重新发送订单号（如 A00001），我再帮您查询。"
+                ),
+                "error": None,
+            })
+        return out
+
+    if result.status == "forbidden":
         reason = "非本人订单，权限拒绝"
         override = result.message
     elif result.status == "timeout":
@@ -178,9 +220,19 @@ def validate_answer(state: CustomerServiceState) -> CustomerServiceState:
     out = dict(state)
     out["citations"] = sorted(cited)
     out["citation_valid"] = valid
-    if not valid:
+    if valid:
+        out["needs_human"] = False
+        out["handoff_reason"] = None
+        return out
+    # 引用不合规（幻觉引用）不等于「必须人工」：先重写纠正，重写仍不合规才升级人工。
+    rewrites = int(state.get("rewrites") or 0) + 1
+    out["rewrites"] = rewrites
+    if rewrites < MAX_REWRITES:
+        out["needs_human"] = False
+        out["handoff_reason"] = None
+    else:
         out["needs_human"] = True
-        out["handoff_reason"] = "回答引用校验失败"
+        out["handoff_reason"] = "回答引用校验失败，重写后仍不合规"
     return out
 
 
