@@ -95,6 +95,26 @@ export interface EvalAlert {
   created_at: string
 }
 
+/** 性能看板：评测指标聚合摘要（/metrics/summary） */
+export interface MetricsSummary {
+  storage: 'memory' | 'mysql'
+  total: number
+  resolved: number
+  handoff: number
+  clarification: number
+  errors: number
+  tool_success: number
+  tool_failure: number
+  citation_valid: number
+  citation_invalid: number
+  latency_avg_ms: number | null
+  latency_p50_ms: number | null
+  latency_p95_ms: number | null
+  by_intent: Record<string, number>
+  by_response_mode: Record<string, number>
+  by_tool_status: Record<string, number>
+}
+
 /** 业务工具统一返回（迭代 2 只读订单工具） */
 export interface ToolResultRecord {
   tool: string
@@ -215,4 +235,6 @@ export const api = {
 
   recentAlerts: (limit = 50) =>
     request<EvalAlert[]>(`/api/v1/alerts/recent?limit=${limit}`),
+
+  metricsSummary: () => request<MetricsSummary>('/api/v1/metrics/summary'),
 }

@@ -389,6 +389,108 @@ button.operator:focus-visible {
   font-size: 12px;
 }
 
+/* 性能看板（Modal 内） */
+/* 弹窗内容区：纵向 + 横向均可滚动（行内 styles 兜底，避免被组件样式覆盖） */
+.metrics-modal .ant-modal-body {
+  max-height: calc(100vh - 200px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.alerts-modal .ant-modal-body {
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.metrics-panel {
+  /* 窄屏时不被栅格压扁，保持可读宽度并允许横向滚动 */
+  min-width: 720px;
+  padding: 4px 2px;
+}
+
+.metrics-latency {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.metrics-latency > div {
+  flex: 1;
+  text-align: center;
+  background: var(--canvas);
+  border-radius: 8px;
+  padding: 12px 4px;
+}
+
+.metrics-latency-label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.metrics-latency strong {
+  font-size: 18px;
+  color: var(--ink);
+}
+
+.metrics-tags {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  height: 100%;
+}
+
+.metrics-dist-title {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.metrics-dist-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.metrics-dist-label {
+  width: 72px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--ink);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metrics-dist-bar {
+  flex: 1;
+  height: 8px;
+  background: var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.metrics-dist-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s var(--ease-standard);
+}
+
+.metrics-dist-value {
+  width: 32px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: left;
+}
+
 .new-conversation:hover {
   box-shadow: 0 10px 20px rgba(37, 99, 235, 0.24);
   background: #1d4ed8;

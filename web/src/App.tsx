@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { App as AntApp, Badge, Button, Modal, Tooltip } from 'antd'
-import { AlertOutlined } from '@ant-design/icons'
+import { AlertOutlined, DashboardOutlined } from '@ant-design/icons'
 import { XProvider } from '@ant-design/x'
 import AlertsPanel from './components/AlertsPanel'
 import ChatPanel from './components/ChatPanel'
@@ -11,6 +11,7 @@ import ConversationSidebar from './components/ConversationSidebar'
 import CustomerChat from './components/CustomerChat'
 import KnowledgePanel from './components/KnowledgePanel'
 import LoginPage from './components/LoginPage'
+import MetricsPanel from './components/MetricsPanel'
 import { api } from './lib/api'
 import type { ConversationSummary, Material } from './lib/api'
 import { clearAuth, getAuthUser } from './lib/auth'
@@ -31,6 +32,7 @@ export default function App() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(() => getAuthUser())
   const [knowledgeOpen, setKnowledgeOpen] = useState(false)
   const [alertsOpen, setAlertsOpen] = useState(false)
+  const [metricsOpen, setMetricsOpen] = useState(false)
   const [alertCount, setAlertCount] = useState(0)
   const [conversationVersion, setConversationVersion] = useState(0)
   const [materials, setMaterials] = useState<Material[]>([])
@@ -128,6 +130,17 @@ export default function App() {
                 </Button>
               </Tooltip>
               <span className="header-divider" />
+              <Tooltip title="性能看板">
+                <Button
+                  className="alerts-button"
+                  type="text"
+                  onClick={() => setMetricsOpen(true)}
+                >
+                  <DashboardOutlined className="alerts-icon" />
+                  性能
+                </Button>
+              </Tooltip>
+              <span className="header-divider" />
               <div className="operator"><span className="operator-avatar">Z</span><span><strong>{authUser.display_name}</strong><small>客服运营</small></span></div>
               <Button className="logout-button" type="text" onClick={handleLogout}>退出</Button>
             </div>
@@ -177,6 +190,8 @@ export default function App() {
         <Modal
           title="知识库管理"
           open={knowledgeOpen}
+          centered
+          className="knowledge-modal"
           footer={null}
           width={800}
           styles={{ body: { padding: 0 } }}
@@ -187,12 +202,26 @@ export default function App() {
         <Modal
           title="评测告警"
           open={alertsOpen}
+          centered
+          className="alerts-modal"
           footer={null}
           width={680}
-          styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }}
+          styles={{ body: { maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' } }}
           onCancel={() => setAlertsOpen(false)}
         >
           <AlertsPanel onRefresh={setAlertCount} />
+        </Modal>
+        <Modal
+          title="性能看板"
+          open={metricsOpen}
+          centered
+          className="metrics-modal"
+          footer={null}
+          width={960}
+          styles={{ body: { maxHeight: 'calc(100vh - 200px)', overflow: 'auto' } }}
+          onCancel={() => setMetricsOpen(false)}
+        >
+          <MetricsPanel />
         </Modal>
       </AntApp>
     </XProvider>
